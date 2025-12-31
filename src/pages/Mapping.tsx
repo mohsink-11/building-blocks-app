@@ -1,47 +1,162 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Sparkles,
-  GripVertical,
-  Link as LinkIcon,
-  Plus,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, Plus, Eye, EyeOff } from "lucide-react";
+import { SourceColumnItem, SourceColumn } from "@/components/mapping/SourceColumnItem";
+import { TargetColumnItem, TargetColumn } from "@/components/mapping/TargetColumnItem";
+import { AISuggestionsBar, AISuggestion } from "@/components/mapping/AISuggestionsBar";
+import { MappingPreviewTable } from "@/components/mapping/MappingPreviewTable";
 
 // Placeholder source columns from uploaded Excel
-const sourceColumns = [
-  { id: "s1", name: "Item Number", type: "string" },
-  { id: "s2", name: "Description", type: "string" },
-  { id: "s3", name: "Quantity", type: "number" },
-  { id: "s4", name: "Unit Price", type: "number" },
-  { id: "s5", name: "Category", type: "string" },
-  { id: "s6", name: "Supplier", type: "string" },
-  { id: "s7", name: "Lead Time", type: "number" },
-  { id: "s8", name: "Notes", type: "string" },
+const initialSourceColumns: SourceColumn[] = [
+  { id: "s1", name: "Item Number", type: "string", sampleValues: ["ITEM-001", "ITEM-002"] },
+  { id: "s2", name: "Description", type: "string", sampleValues: ["Widget Assembly"] },
+  { id: "s3", name: "Quantity", type: "number", sampleValues: ["25", "100"] },
+  { id: "s4", name: "Unit Price", type: "number", sampleValues: ["49.99", "12.50"] },
+  { id: "s5", name: "Category", type: "string", sampleValues: ["Equipment", "Spare"] },
+  { id: "s6", name: "Supplier", type: "string", sampleValues: ["Acme Corp", "Parts Inc"] },
+  { id: "s7", name: "Lead Time", type: "number", sampleValues: ["7", "14"] },
+  { id: "s8", name: "Notes", type: "string", sampleValues: ["High priority", "Standard"] },
 ];
 
-// Placeholder target columns for transformation
-const targetColumns = [
-  { id: "t1", name: "Part ID", mapped: ["s1"] },
-  { id: "t2", name: "Full Description", mapped: ["s2", "s8"] },
-  { id: "t3", name: "Qty", mapped: ["s3"] },
-  { id: "t4", name: "Price", mapped: ["s4"] },
-  { id: "t5", name: "Vendor", mapped: ["s6"] },
+const initialTargetColumns: TargetColumn[] = [
+  { id: "t1", name: "Part ID", mappedColumns: ["s1"], delimiter: "" },
+  { id: "t2", name: "Full Description", mappedColumns: ["s2", "s8"], delimiter: " - " },
+  { id: "t3", name: "Qty", mappedColumns: ["s3"], delimiter: "" },
+  { id: "t4", name: "Price", mappedColumns: ["s4"], delimiter: "" },
+  { id: "t5", name: "Vendor", mappedColumns: ["s6"], delimiter: "" },
 ];
 
-const aiSuggestions = [
-  "Map 'Item Number' to 'Part ID'",
-  "Combine 'Description' + 'Notes' for 'Full Description'",
-  "Map 'Supplier' to 'Vendor'",
+const initialSuggestions: AISuggestion[] = [
+  {
+    id: "sug1",
+    description: "Map 'Lead Time' to a new 'Delivery Days' column",
+    sourceColumns: ["s7"],
+    targetColumn: "new",
+    applied: false,
+  },
+  {
+    id: "sug2",
+    description: "Add 'Category' as a row type indicator",
+    sourceColumns: ["s5"],
+    targetColumn: "new",
+    applied: false,
+  },
+];
+
+// Preview sample data
+const previewRows = [
+  { t1: "ITEM-001", t2: "Widget Assembly - High priority", t3: "25", t4: "$49.99", t5: "Acme Corp" },
+  { t1: "ITEM-002", t2: "Gear Component - Standard", t3: "100", t4: "$12.50", t5: "Parts Inc" },
+  { t1: "ITEM-003", t2: "Motor Unit - Replacement", t3: "5", t4: "$299.00", t5: "MotorWorks" },
 ];
 
 export default function Mapping() {
   const { projectId } = useParams<{ projectId: string }>();
+  const [sourceColumns] = useState<SourceColumn[]>(initialSourceColumns);
+  const [targetColumns, setTargetColumns] = useState<TargetColumn[]>(initialTargetColumns);
+  const [suggestions, setSuggestions] = useState<AISuggestion[]>(initialSuggestions);
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(true);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+
+  // Get mapped source IDs
+  const mappedSourceIds = new Set(targetColumns.flatMap((t) => t.mappedColumns));
+
+  // Get available source columns for a target
+  const getAvailableSourceColumns = (targetId: string) => {
+    const target = targetColumns.find((t) => t.id === targetId);
+    return sourceColumns.filter(
+      (s) => !target?.mappedColumns.includes(s.id)
+    );
+  };
+
+  const handleAddTargetColumn = () => {
+    const newId = `t${Date.now()}`;
+    setTargetColumns([
+      ...targetColumns,
+      { id: newId, name: "New Column", mappedColumns: [], delimiter: " - " },
+    ]);
+  };
+
+  const handleRemoveMapping = (targetId: string, sourceId: string) => {
+    setTargetColumns(
+      targetColumns.map((t) =>
+        t.id === targetId
+          ? { ...t, mappedColumns: t.mappedColumns.filter((id) => id !== sourceId) }
+          : t
+      )
+    );
+  };
+
+  const handleAddMapping = (targetId: string, sourceId: string) => {
+    setTargetColumns(
+      targetColumns.map((t) =>
+        t.id === targetId
+          ? { ...t, mappedColumns: [...t.mappedColumns, sourceId] }
+          : t
+      )
+    );
+    setSelectedSource(null);
+  };
+
+  const handleUpdateTargetColumn = (targetId: string, updates: Partial<TargetColumn>) => {
+    setTargetColumns(
+      targetColumns.map((t) =>
+        t.id === targetId ? { ...t, ...updates } : t
+      )
+    );
+  };
+
+  const handleDeleteTargetColumn = (targetId: string) => {
+    setTargetColumns(targetColumns.filter((t) => t.id !== targetId));
+  };
+
+  const handleApplySuggestion = (suggestionId: string) => {
+    const suggestion = suggestions.find((s) => s.id === suggestionId);
+    if (!suggestion) return;
+
+    // Add new target column with the suggested mapping
+    const newId = `t${Date.now()}`;
+    const suggestedName = suggestion.description.match(/['']([^'']+)['']/)?.[1] || "New Column";
+    
+    setTargetColumns([
+      ...targetColumns,
+      {
+        id: newId,
+        name: suggestedName,
+        mappedColumns: suggestion.sourceColumns,
+        delimiter: "",
+      },
+    ]);
+
+    setSuggestions(
+      suggestions.map((s) =>
+        s.id === suggestionId ? { ...s, applied: true } : s
+      )
+    );
+  };
+
+  const handleDismissSuggestion = (suggestionId: string) => {
+    setSuggestions(suggestions.filter((s) => s.id !== suggestionId));
+  };
+
+  const handleDragOver = useCallback((e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    setDropTargetId(targetId);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent, targetId: string) => {
+      e.preventDefault();
+      setDropTargetId(null);
+      if (selectedSource) {
+        handleAddMapping(targetId, selectedSource);
+      }
+    },
+    [selectedSource]
+  );
 
   return (
     <div className="flex-1 p-4 pt-6 md:p-8">
@@ -63,6 +178,15 @@ export default function Mapping() {
             </p>
           </div>
           <div className="flex gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowPreview(!showPreview)}
+              className="hidden sm:flex"
+            >
+              {showPreview ? <EyeOff className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
+              {showPreview ? "Hide Preview" : "Show Preview"}
+            </Button>
             <Button variant="outline" asChild>
               <Link to={`/rules/${projectId}`}>
                 Configure Rules
@@ -71,7 +195,7 @@ export default function Mapping() {
             </Button>
             <Button asChild>
               <Link to={`/preview/${projectId}`}>
-                Preview
+                Preview Data
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
@@ -80,52 +204,38 @@ export default function Mapping() {
       </div>
 
       {/* AI Suggestions */}
-      <Card className="mb-6 border-primary/20 bg-primary/5">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Sparkles className="h-5 w-5 text-primary" />
-            <span className="font-semibold">AI Suggestions</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {aiSuggestions.map((suggestion, index) => (
-              <Badge
-                key={index}
-                variant="secondary"
-                className="cursor-pointer hover:bg-primary hover:text-primary-foreground"
-              >
-                {suggestion}
-              </Badge>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <div className="mb-6">
+        <AISuggestionsBar
+          suggestions={suggestions}
+          onApply={handleApplySuggestion}
+          onDismiss={handleDismissSuggestion}
+        />
+      </div>
 
       {/* Mapping Interface */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Source Columns */}
         <Card>
-          <CardHeader>
-            <CardTitle>Source Columns</CardTitle>
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg">Source Columns</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Click or drag columns to map them
+            </p>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
+          <CardContent className="pt-0">
+            <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
               {sourceColumns.map((column) => (
-                <div
+                <SourceColumnItem
                   key={column.id}
-                  onClick={() => setSelectedSource(column.id === selectedSource ? null : column.id)}
-                  className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
-                    selectedSource === column.id
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50"
-                  }`}
-                >
-                  <GripVertical className="h-4 w-4 text-muted-foreground" />
-                  <div className="flex-1">
-                    <p className="font-medium">{column.name}</p>
-                    <p className="text-xs text-muted-foreground">{column.type}</p>
-                  </div>
-                  <LinkIcon className="h-4 w-4 text-muted-foreground" />
-                </div>
+                  column={column}
+                  isSelected={selectedSource === column.id}
+                  isMapped={mappedSourceIds.has(column.id)}
+                  onSelect={() =>
+                    setSelectedSource(selectedSource === column.id ? null : column.id)
+                  }
+                  onDragStart={() => setSelectedSource(column.id)}
+                  onDragEnd={() => setDropTargetId(null)}
+                />
               ))}
             </div>
           </CardContent>
@@ -133,40 +243,36 @@ export default function Mapping() {
 
         {/* Target Columns */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Target Columns</CardTitle>
-            <Button variant="outline" size="sm">
+          <CardHeader className="flex flex-row items-center justify-between pb-4">
+            <div>
+              <CardTitle className="text-lg">Target Columns</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Configure output structure
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={handleAddTargetColumn}>
               <Plus className="mr-2 h-4 w-4" />
               Add Column
             </Button>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
+          <CardContent className="pt-0">
+            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
               {targetColumns.map((column) => (
                 <div
                   key={column.id}
-                  className="flex items-center gap-3 rounded-lg border border-border p-3"
+                  onDragOver={(e) => handleDragOver(e, column.id)}
+                  onDrop={(e) => handleDrop(e, column.id)}
                 >
-                  <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab" />
-                  <div className="flex-1">
-                    <p className="font-medium">{column.name}</p>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {column.mapped.length > 0 ? (
-                        column.mapped.map((sourceId) => {
-                          const source = sourceColumns.find((s) => s.id === sourceId);
-                          return (
-                            <Badge key={sourceId} variant="outline" className="text-xs">
-                              {source?.name}
-                            </Badge>
-                          );
-                        })
-                      ) : (
-                        <span className="text-xs text-muted-foreground">
-                          No mapping
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                  <TargetColumnItem
+                    column={column}
+                    sourceColumns={sourceColumns}
+                    isDropTarget={dropTargetId === column.id}
+                    onRemoveMapping={(sourceId) => handleRemoveMapping(column.id, sourceId)}
+                    onAddMapping={(sourceId) => handleAddMapping(column.id, sourceId)}
+                    onUpdateColumn={(updates) => handleUpdateTargetColumn(column.id, updates)}
+                    onDelete={() => handleDeleteTargetColumn(column.id)}
+                    availableSourceColumns={getAvailableSourceColumns(column.id)}
+                  />
                 </div>
               ))}
             </div>
@@ -174,50 +280,24 @@ export default function Mapping() {
         </Card>
       </div>
 
-      {/* Preview Panel (Mobile: Bottom Sheet Style) */}
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle>Mapping Preview</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b">
-                  {targetColumns.map((col) => (
-                    <th key={col.id} className="px-4 py-2 text-left font-medium">
-                      {col.name}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b">
-                  <td className="px-4 py-2">ITEM-001</td>
-                  <td className="px-4 py-2">Widget Assembly - High priority</td>
-                  <td className="px-4 py-2">25</td>
-                  <td className="px-4 py-2">$49.99</td>
-                  <td className="px-4 py-2">Acme Corp</td>
-                </tr>
-                <tr className="border-b">
-                  <td className="px-4 py-2">ITEM-002</td>
-                  <td className="px-4 py-2">Gear Component - Standard</td>
-                  <td className="px-4 py-2">100</td>
-                  <td className="px-4 py-2">$12.50</td>
-                  <td className="px-4 py-2">Parts Inc</td>
-                </tr>
-                <tr>
-                  <td className="px-4 py-2">ITEM-003</td>
-                  <td className="px-4 py-2">Motor Unit - Replacement</td>
-                  <td className="px-4 py-2">5</td>
-                  <td className="px-4 py-2">$299.00</td>
-                  <td className="px-4 py-2">MotorWorks</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Preview Panel */}
+      {showPreview && (
+        <Card className="mt-6 animate-fade-in">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg">Mapping Preview</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Sample output based on current mappings
+            </p>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <MappingPreviewTable
+              columns={targetColumns.map((t) => ({ id: t.id, name: t.name }))}
+              rows={previewRows}
+              highlightColumn={selectedSource ? undefined : undefined}
+            />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

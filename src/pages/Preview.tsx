@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -10,34 +10,61 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
   ArrowLeft,
   Download,
   RefreshCw,
-  CheckCircle,
-  AlertCircle,
-  Eye,
+  SplitSquareHorizontal,
+  Table,
+  FileSpreadsheet,
+  FileText,
 } from "lucide-react";
+import { PreviewStats } from "@/components/preview/PreviewStats";
+import { DataPreviewTable, ColumnDef, DataRow } from "@/components/preview/DataPreviewTable";
+import { ComparisonView } from "@/components/preview/ComparisonView";
 
 // Placeholder preview data
-const previewData = {
-  before: [
-    { id: 1, itemNumber: "ITEM-001", description: "Widget Assembly", quantity: 25, unitPrice: 49.99, category: "Equipment", supplier: "Acme Corp", notes: "High priority" },
-    { id: 2, itemNumber: "ITEM-002", description: "Gear Component", quantity: 100, unitPrice: 12.50, category: "Spare", supplier: "Parts Inc", notes: "Standard" },
-    { id: 3, itemNumber: "ITEM-003", description: "Motor Unit", quantity: 5, unitPrice: 299.00, category: "Equipment", supplier: "MotorWorks", notes: "Replacement" },
-  ],
-  after: [
-    { id: 1, partId: "ITEM-001", fullDescription: "Widget Assembly - High priority", qty: 25, price: "$49.99", vendor: "Acme Corp", status: "Active", hasError: false },
-    { id: 2, partId: "ITEM-002", fullDescription: "Gear Component - Standard", qty: 100, price: "$12.50", vendor: "Parts Inc", status: "Active", hasError: false },
-    { id: 3, partId: "ITEM-003", fullDescription: "Motor Unit - Replacement", qty: 5, price: "$299.00", vendor: "MotorWorks", status: "Active", hasError: true },
-  ],
-};
+const beforeColumns = [
+  { id: "itemNumber", name: "Item Number" },
+  { id: "description", name: "Description" },
+  { id: "quantity", name: "Quantity" },
+  { id: "unitPrice", name: "Unit Price" },
+  { id: "category", name: "Category" },
+  { id: "supplier", name: "Supplier" },
+];
+
+const afterColumns: ColumnDef[] = [
+  { id: "partId", name: "Part ID" },
+  { id: "fullDescription", name: "Full Description" },
+  { id: "qty", name: "Qty" },
+  { id: "price", name: "Price" },
+  { id: "vendor", name: "Vendor" },
+  { id: "status", name: "Status" },
+];
+
+const beforeRows = [
+  { id: 1, itemNumber: "ITEM-001", description: "Widget Assembly", quantity: 25, unitPrice: 49.99, category: "Equipment", supplier: "Acme Corp" },
+  { id: 2, itemNumber: "ITEM-002", description: "Gear Component", quantity: 100, unitPrice: 12.5, category: "Spare", supplier: "Parts Inc" },
+  { id: 3, itemNumber: "ITEM-003", description: "Motor Unit", quantity: 5, unitPrice: 299.0, category: "Equipment", supplier: "MotorWorks" },
+  { id: 4, itemNumber: "ITEM-004", description: "Bearing Set", quantity: 50, unitPrice: 8.75, category: "Spare", supplier: "Precision Co" },
+  { id: 5, itemNumber: "ITEM-005", description: "Control Panel", quantity: 2, unitPrice: 450.0, category: "Assembly", supplier: "TechParts" },
+];
+
+const afterRows: DataRow[] = [
+  { id: 1, partId: "ITEM-001", fullDescription: "Widget Assembly - High priority", qty: 25, price: "$49.99", vendor: "Acme Corp", status: "Active" },
+  { id: 2, partId: "ITEM-002", fullDescription: "Gear Component - Standard", qty: 100, price: "$12.50", vendor: "Parts Inc", status: "Active" },
+  { id: 3, partId: "ITEM-003", fullDescription: "Motor Unit - Replacement", qty: 5, price: "$299.00", vendor: "MotorWorks", status: "Active" },
+  { id: 4, partId: "ITEM-004", fullDescription: "Bearing Set", qty: 50, price: "$8.75", vendor: "Precision Co", status: "Active" },
+  { id: 5, partId: "ITEM-005", fullDescription: "Control Panel - Assembly", qty: 2, price: "$450.00", vendor: "TechParts", status: "Active" },
+];
+
+const errorRowIds = new Set([3]);
 
 export default function Preview() {
   const { projectId } = useParams<{ projectId: string }>();
-  const [viewMode, setViewMode] = useState<"split" | "after">("split");
+  const [viewMode, setViewMode] = useState<"comparison" | "table">("comparison");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [exportFormat, setExportFormat] = useState("xlsx");
 
   const handleRefresh = () => {
     setIsProcessing(true);
@@ -46,10 +73,12 @@ export default function Preview() {
 
   const handleExport = () => {
     // TODO: Implement export logic
-    console.log("Exporting...");
+    console.log("Exporting as:", exportFormat);
   };
 
-  const errorCount = previewData.after.filter((row) => row.hasError).length;
+  const errorCount = errorRowIds.size;
+  const totalRows = afterRows.length;
+  const successfulRows = totalRows - errorCount;
 
   return (
     <div className="flex-1 p-4 pt-6 md:p-8">
@@ -70,202 +99,104 @@ export default function Preview() {
               Review transformations before exporting
             </p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <Button
               variant="outline"
               onClick={handleRefresh}
               disabled={isProcessing}
             >
-              <RefreshCw className={`mr-2 h-4 w-4 ${isProcessing ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`mr-2 h-4 w-4 ${isProcessing ? "animate-spin" : ""}`}
+              />
               Refresh
             </Button>
-            <Button onClick={handleExport}>
-              <Download className="mr-2 h-4 w-4" />
-              Export
-            </Button>
+            <div className="flex">
+              <Select value={exportFormat} onValueChange={setExportFormat}>
+                <SelectTrigger className="w-[100px] rounded-r-none border-r-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="xlsx">.xlsx</SelectItem>
+                  <SelectItem value="csv">.csv</SelectItem>
+                  <SelectItem value="json">.json</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button onClick={handleExport} className="rounded-l-none">
+                <Download className="mr-2 h-4 w-4" />
+                Export
+              </Button>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Summary Stats */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
-        <Card>
-          <CardContent className="flex items-center gap-4 p-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Eye className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{previewData.after.length}</p>
-              <p className="text-sm text-muted-foreground">Rows Processed</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-4 p-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent/10 text-accent">
-              <CheckCircle className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{previewData.after.length - errorCount}</p>
-              <p className="text-sm text-muted-foreground">Successful</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-4 p-4">
-            <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${errorCount > 0 ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"}`}>
-              <AlertCircle className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{errorCount}</p>
-              <p className="text-sm text-muted-foreground">Errors</p>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="mb-6">
+        <PreviewStats
+          totalRows={totalRows}
+          successfulRows={successfulRows}
+          errorRows={errorCount}
+        />
       </div>
 
-      {/* View Mode Toggle */}
-      <div className="mb-6 flex items-center gap-4">
-        <span className="text-sm font-medium">View:</span>
-        <Select value={viewMode} onValueChange={(v) => setViewMode(v as "split" | "after")}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="split">Before & After</SelectItem>
-            <SelectItem value="after">Transformed Only</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      {/* View Mode Tabs */}
+      <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "comparison" | "table")} className="space-y-4">
+        <TabsList className="grid w-full max-w-xs grid-cols-2">
+          <TabsTrigger value="comparison" className="gap-2">
+            <SplitSquareHorizontal className="h-4 w-4" />
+            Compare
+          </TabsTrigger>
+          <TabsTrigger value="table" className="gap-2">
+            <Table className="h-4 w-4" />
+            Table
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Data Tables */}
-      {viewMode === "split" ? (
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Before Table */}
+        <TabsContent value="comparison" className="mt-4">
+          <ComparisonView
+            beforeColumns={beforeColumns}
+            afterColumns={afterColumns}
+            beforeRows={beforeRows}
+            afterRows={afterRows}
+            errorRowIds={errorRowIds}
+          />
+        </TabsContent>
+
+        <TabsContent value="table" className="mt-4">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Before (Source)</CardTitle>
+            <CardHeader className="pb-4">
+              <CardTitle className="text-lg">Transformed Data</CardTitle>
             </CardHeader>
-            <CardContent>
-              <ScrollArea className="w-full">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="px-3 py-2 text-left font-medium">Item Number</th>
-                      <th className="px-3 py-2 text-left font-medium">Description</th>
-                      <th className="px-3 py-2 text-left font-medium">Qty</th>
-                      <th className="px-3 py-2 text-left font-medium">Price</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previewData.before.map((row) => (
-                      <tr key={row.id} className="border-b">
-                        <td className="px-3 py-2">{row.itemNumber}</td>
-                        <td className="px-3 py-2">{row.description}</td>
-                        <td className="px-3 py-2">{row.quantity}</td>
-                        <td className="px-3 py-2">${row.unitPrice}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <ScrollBar orientation="horizontal" />
-              </ScrollArea>
+            <CardContent className="pt-0">
+              <DataPreviewTable
+                columns={afterColumns}
+                rows={afterRows}
+                errorRows={errorRowIds}
+                highlightChanges
+              />
             </CardContent>
           </Card>
+        </TabsContent>
+      </Tabs>
 
-          {/* After Table */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">After (Transformed)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="w-full">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="px-3 py-2 text-left font-medium">Part ID</th>
-                      <th className="px-3 py-2 text-left font-medium">Full Description</th>
-                      <th className="px-3 py-2 text-left font-medium">Qty</th>
-                      <th className="px-3 py-2 text-left font-medium">Price</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previewData.after.map((row) => (
-                      <tr
-                        key={row.id}
-                        className={`border-b ${row.hasError ? "bg-destructive/5" : ""}`}
-                      >
-                        <td className="px-3 py-2">{row.partId}</td>
-                        <td className="px-3 py-2">{row.fullDescription}</td>
-                        <td className="px-3 py-2">{row.qty}</td>
-                        <td className="px-3 py-2">{row.price}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <ScrollBar orientation="horizontal" />
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        </div>
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Transformed Data</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="w-full">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="px-3 py-2 text-left font-medium">Part ID</th>
-                    <th className="px-3 py-2 text-left font-medium">Full Description</th>
-                    <th className="px-3 py-2 text-left font-medium">Qty</th>
-                    <th className="px-3 py-2 text-left font-medium">Price</th>
-                    <th className="px-3 py-2 text-left font-medium">Vendor</th>
-                    <th className="px-3 py-2 text-left font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {previewData.after.map((row) => (
-                    <tr
-                      key={row.id}
-                      className={`border-b ${row.hasError ? "bg-destructive/5" : ""}`}
-                    >
-                      <td className="px-3 py-2">{row.partId}</td>
-                      <td className="px-3 py-2">{row.fullDescription}</td>
-                      <td className="px-3 py-2">{row.qty}</td>
-                      <td className="px-3 py-2">{row.price}</td>
-                      <td className="px-3 py-2">{row.vendor}</td>
-                      <td className="px-3 py-2">
-                        <Badge variant={row.hasError ? "destructive" : "default"}>
-                          {row.hasError ? "Error" : row.status}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <ScrollBar orientation="horizontal" />
-            </ScrollArea>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Export Options */}
+      {/* Export Options Card */}
       <Card className="mt-6">
-        <CardHeader>
-          <CardTitle>Export Options</CardTitle>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg">Quick Export</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-4">
-            <Button variant="outline">
-              <Download className="mr-2 h-4 w-4" />
-              Download as .xlsx
+        <CardContent className="pt-0">
+          <div className="flex flex-wrap gap-3">
+            <Button variant="outline" className="gap-2">
+              <FileSpreadsheet className="h-4 w-4" />
+              Download Excel (.xlsx)
             </Button>
-            <Button variant="outline">
-              <Download className="mr-2 h-4 w-4" />
-              Download as .csv
+            <Button variant="outline" className="gap-2">
+              <FileText className="h-4 w-4" />
+              Download CSV
+            </Button>
+            <Button variant="ghost" className="gap-2 text-muted-foreground">
+              <Download className="h-4 w-4" />
+              More formats...
             </Button>
           </div>
         </CardContent>

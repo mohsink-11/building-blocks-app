@@ -1,29 +1,18 @@
 import { useState, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import {
-  FileSpreadsheet,
-  Upload as UploadIcon,
-  X,
-  CheckCircle,
-  AlertCircle,
-  ArrowRight,
-} from "lucide-react";
-
-interface UploadedFile {
-  name: string;
-  size: number;
-  status: "uploading" | "validating" | "ready" | "error";
-  progress: number;
-  error?: string;
-}
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ArrowRight, FolderPlus, FileSpreadsheet, Sparkles } from "lucide-react";
+import { FileDropZone } from "@/components/upload/FileDropZone";
+import { FilePreviewCard, UploadedFileData } from "@/components/upload/FilePreviewCard";
 
 export default function Upload() {
   const navigate = useNavigate();
   const [isDragActive, setIsDragActive] = useState(false);
-  const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<UploadedFileData | null>(null);
+  const [projectName, setProjectName] = useState("");
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -35,44 +24,57 @@ export default function Upload() {
     }
   }, []);
 
-  const processFile = (file: File) => {
-    // Validate file type
+  const validateFile = (file: File): { valid: boolean; error?: string } => {
     const validTypes = [
       "application/vnd.ms-excel",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      ".xls",
-      ".xlsx",
     ];
     const isValidType =
-      validTypes.some((type) => file.type === type) ||
+      validTypes.includes(file.type) ||
       file.name.endsWith(".xls") ||
       file.name.endsWith(".xlsx");
 
     if (!isValidType) {
-      setUploadedFile({
-        name: file.name,
-        size: file.size,
-        status: "error",
-        progress: 0,
+      return {
+        valid: false,
         error: "Invalid file type. Please upload an Excel file (.xls or .xlsx)",
-      });
-      return;
+      };
     }
 
-    // Validate file size (max 50MB)
     if (file.size > 50 * 1024 * 1024) {
+      return {
+        valid: false,
+        error: "File too large. Maximum size is 50MB",
+      };
+    }
+
+    return { valid: true };
+  };
+
+  const simulateUpload = (file: File) => {
+    const id = Math.random().toString(36).substring(7);
+    const validation = validateFile(file);
+
+    if (!validation.valid) {
       setUploadedFile({
+        id,
         name: file.name,
         size: file.size,
         status: "error",
         progress: 0,
-        error: "File too large. Maximum size is 50MB",
+        error: validation.error,
       });
       return;
     }
 
-    // Simulate upload process
+    // Auto-generate project name from file
+    if (!projectName) {
+      const baseName = file.name.replace(/\.[^/.]+$/, "");
+      setProjectName(baseName);
+    }
+
     setUploadedFile({
+      id,
       name: file.name,
       size: file.size,
       status: "uploading",
@@ -82,24 +84,40 @@ export default function Upload() {
     // Simulate progress
     let progress = 0;
     const interval = setInterval(() => {
-      progress += 10;
+      progress += Math.random() * 15 + 5;
       if (progress >= 100) {
         clearInterval(interval);
         setUploadedFile((prev) =>
           prev ? { ...prev, status: "validating", progress: 100 } : null
         );
-        // Simulate validation
+        // Simulate validation and column detection
         setTimeout(() => {
           setUploadedFile((prev) =>
-            prev ? { ...prev, status: "ready" } : null
+            prev
+              ? {
+                  ...prev,
+                  status: "ready",
+                  columns: [
+                    "Item Number",
+                    "Description",
+                    "Quantity",
+                    "Unit Price",
+                    "Category",
+                    "Supplier",
+                    "Lead Time",
+                    "Notes",
+                  ],
+                  rowCount: 1247,
+                }
+              : null
           );
-        }, 1000);
+        }, 1200);
       } else {
         setUploadedFile((prev) =>
-          prev ? { ...prev, progress } : null
+          prev ? { ...prev, progress: Math.min(progress, 99) } : null
         );
       }
-    }, 100);
+    }, 150);
   };
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -108,20 +126,16 @@ export default function Upload() {
     setIsDragActive(false);
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processFile(e.dataTransfer.files[0]);
+      simulateUpload(e.dataTransfer.files[0]);
     }
   }, []);
 
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      processFile(e.target.files[0]);
-    }
-  };
+  const handleFileSelect = useCallback((file: File) => {
+    simulateUpload(file);
+  }, []);
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  const handleRemoveFile = () => {
+    setUploadedFile(null);
   };
 
   const handleContinue = () => {
@@ -129,136 +143,100 @@ export default function Upload() {
     navigate("/mapping/new");
   };
 
+  const canContinue = uploadedFile?.status === "ready" && projectName.trim().length > 0;
+
   return (
-    <div className="flex-1 p-4 pt-6 md:p-8">
+    <div
+      className="flex-1 p-4 pt-6 md:p-8"
+      onDragEnter={handleDrag}
+      onDragLeave={handleDrag}
+      onDragOver={handleDrag}
+      onDrop={handleDrop}
+    >
       <div className="mx-auto max-w-2xl">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-            Upload Excel File
+            Create New Project
           </h1>
           <p className="text-muted-foreground">
             Upload your Excel file to start the transformation process
           </p>
         </div>
 
-        {/* Upload Zone */}
+        {/* Project Name */}
         <Card className="mb-6">
-          <CardContent className="p-6">
-            <div
-              onDragEnter={handleDrag}
-              onDragLeave={handleDrag}
-              onDragOver={handleDrag}
-              onDrop={handleDrop}
-              className={`relative flex min-h-[240px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed transition-colors ${
-                isDragActive
-                  ? "border-primary bg-primary/5"
-                  : "border-border hover:border-primary/50 hover:bg-muted/50"
-              }`}
-            >
-              <input
-                type="file"
-                accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                onChange={handleFileInput}
-                className="absolute inset-0 cursor-pointer opacity-0"
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <FolderPlus className="h-5 w-5" />
+              Project Details
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-2">
+              <Label htmlFor="project-name">Project Name</Label>
+              <Input
+                id="project-name"
+                placeholder="Enter project name..."
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                className="h-11"
               />
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <UploadIcon className="h-8 w-8" />
-              </div>
-              <h3 className="mt-4 text-lg font-semibold">
-                {isDragActive ? "Drop your file here" : "Drag & drop your Excel file"}
-              </h3>
-              <p className="mt-2 text-sm text-muted-foreground">
-                or click to browse from your device
-              </p>
-              <p className="mt-4 text-xs text-muted-foreground">
-                Supports .xls and .xlsx files up to 50MB
-              </p>
             </div>
           </CardContent>
         </Card>
 
-        {/* Uploaded File */}
-        {uploadedFile && (
-          <Card className="animate-slide-up">
-            <CardContent className="p-6">
-              <div className="flex items-start gap-4">
-                <div
-                  className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg ${
-                    uploadedFile.status === "error"
-                      ? "bg-destructive/10 text-destructive"
-                      : uploadedFile.status === "ready"
-                      ? "bg-accent/10 text-accent"
-                      : "bg-primary/10 text-primary"
-                  }`}
-                >
-                  {uploadedFile.status === "error" ? (
-                    <AlertCircle className="h-6 w-6" />
-                  ) : uploadedFile.status === "ready" ? (
-                    <CheckCircle className="h-6 w-6" />
-                  ) : (
-                    <FileSpreadsheet className="h-6 w-6" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <p className="font-medium truncate">{uploadedFile.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {formatFileSize(uploadedFile.size)}
-                      </p>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setUploadedFile(null)}
-                      className="shrink-0"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
+        {/* Upload Zone */}
+        <Card className="mb-6">
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <FileSpreadsheet className="h-5 w-5" />
+              Excel File
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {!uploadedFile ? (
+              <FileDropZone
+                onFileSelect={handleFileSelect}
+                isActive={isDragActive}
+              />
+            ) : (
+              <FilePreviewCard file={uploadedFile} onRemove={handleRemoveFile} />
+            )}
+          </CardContent>
+        </Card>
 
-                  {uploadedFile.status === "uploading" && (
-                    <div className="mt-3">
-                      <Progress value={uploadedFile.progress} className="h-2" />
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        Uploading... {uploadedFile.progress}%
-                      </p>
-                    </div>
-                  )}
-
-                  {uploadedFile.status === "validating" && (
-                    <p className="mt-3 text-sm text-muted-foreground">
-                      Validating file structure...
-                    </p>
-                  )}
-
-                  {uploadedFile.status === "ready" && (
-                    <p className="mt-3 text-sm text-accent">
-                      File ready for mapping
-                    </p>
-                  )}
-
-                  {uploadedFile.status === "error" && (
-                    <p className="mt-3 text-sm text-destructive">
-                      {uploadedFile.error}
-                    </p>
-                  )}
-                </div>
+        {/* AI Feature Hint */}
+        {uploadedFile?.status === "ready" && (
+          <Card className="mb-6 border-primary/20 bg-gradient-subtle animate-fade-in">
+            <CardContent className="flex items-center gap-4 p-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="font-medium">AI-Powered Suggestions</p>
+                <p className="text-sm text-muted-foreground">
+                  Our AI will analyze your columns and suggest optimal mappings
+                </p>
               </div>
             </CardContent>
           </Card>
         )}
 
         {/* Continue Button */}
-        {uploadedFile?.status === "ready" && (
-          <div className="mt-6 flex justify-end">
-            <Button onClick={handleContinue} className="min-h-[44px]">
-              Continue to Mapping
-              <ArrowRight className="ml-2 h-5 w-5" />
-            </Button>
-          </div>
-        )}
+        <div className="flex justify-end gap-3">
+          <Button variant="outline" asChild>
+            <Link to="/projects">Cancel</Link>
+          </Button>
+          <Button
+            onClick={handleContinue}
+            disabled={!canContinue}
+            className="min-h-[44px]"
+          >
+            Continue to Mapping
+            <ArrowRight className="ml-2 h-5 w-5" />
+          </Button>
+        </div>
       </div>
     </div>
   );
