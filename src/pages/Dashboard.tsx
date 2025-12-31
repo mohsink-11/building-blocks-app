@@ -8,10 +8,14 @@ import {
   Clock,
   TrendingUp,
   Upload,
+  ArrowRight,
 } from "lucide-react";
+import { StatCard } from "@/components/dashboard/StatCard";
+import { ProjectCard, type Project } from "@/components/dashboard/ProjectCard";
+import { QuickUploadFAB } from "@/components/dashboard/QuickUploadFAB";
 
 // Placeholder data - will be replaced with real data from Supabase
-const recentProjects = [
+const recentProjects: Project[] = [
   { id: "1", name: "Q4 BOM Transform", lastEdited: "2 hours ago", status: "completed" },
   { id: "2", name: "Inventory Mapping", lastEdited: "Yesterday", status: "in_progress" },
   { id: "3", name: "Parts List Conversion", lastEdited: "3 days ago", status: "completed" },
@@ -20,8 +24,8 @@ const recentProjects = [
 const stats = [
   { label: "Total Projects", value: "12", icon: FolderOpen },
   { label: "Files Processed", value: "47", icon: FileSpreadsheet },
-  { label: "Hours Saved", value: "23", icon: Clock },
-  { label: "Success Rate", value: "98%", icon: TrendingUp },
+  { label: "Hours Saved", value: "23", icon: Clock, trend: { value: "12%", positive: true } },
+  { label: "Success Rate", value: "98%", icon: TrendingUp, trend: { value: "3%", positive: true } },
 ];
 
 export default function Dashboard() {
@@ -35,7 +39,7 @@ export default function Dashboard() {
             Welcome back! Here's an overview of your projects.
           </p>
         </div>
-        <Button asChild className="min-h-[44px]">
+        <Button asChild className="hidden min-h-[44px] sm:inline-flex">
           <Link to="/upload">
             <Plus className="mr-2 h-5 w-5" />
             New Project
@@ -46,56 +50,32 @@ export default function Dashboard() {
       {/* Stats Grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat, index) => (
-          <Card key={index}>
-            <CardContent className="flex items-center gap-4 p-6">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <stat.icon className="h-6 w-6" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{stat.value}</p>
-                <p className="text-sm text-muted-foreground">{stat.label}</p>
-              </div>
-            </CardContent>
-          </Card>
+          <StatCard
+            key={index}
+            label={stat.label}
+            value={stat.value}
+            icon={stat.icon}
+            trend={stat.trend}
+          />
         ))}
       </div>
 
       {/* Recent Projects */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Recent Projects</CardTitle>
-          <Button variant="ghost" size="sm" asChild>
-            <Link to="/projects">View all</Link>
+        <CardHeader className="flex flex-row items-center justify-between pb-4">
+          <CardTitle className="text-lg">Recent Projects</CardTitle>
+          <Button variant="ghost" size="sm" asChild className="gap-1">
+            <Link to="/projects">
+              View all
+              <ArrowRight className="h-4 w-4" />
+            </Link>
           </Button>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-0">
           {recentProjects.length > 0 ? (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {recentProjects.map((project) => (
-                <Link
-                  key={project.id}
-                  to={`/project/${project.id}`}
-                  className="flex items-center gap-4 rounded-lg border border-border p-4 transition-colors hover:bg-muted/50"
-                >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <FileSpreadsheet className="h-5 w-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{project.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      Last edited {project.lastEdited}
-                    </p>
-                  </div>
-                  <div
-                    className={`rounded-full px-3 py-1 text-xs font-medium ${
-                      project.status === "completed"
-                        ? "bg-accent/10 text-accent"
-                        : "bg-warning/10 text-warning"
-                    }`}
-                  >
-                    {project.status === "completed" ? "Completed" : "In Progress"}
-                  </div>
-                </Link>
+                <ProjectCard key={project.id} project={project} variant="list" />
               ))}
             </div>
           ) : (
@@ -117,6 +97,9 @@ export default function Dashboard() {
           )}
         </CardContent>
       </Card>
+
+      {/* Quick Upload FAB (Mobile) */}
+      <QuickUploadFAB />
     </div>
   );
 }
