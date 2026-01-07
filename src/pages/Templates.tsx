@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useState, useRef } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,46 +23,89 @@ import {
   Play,
 } from "lucide-react";
 
-// Placeholder templates
-const templates = [
-  {
-    id: "t1",
-    name: "BOM Standard Transform",
-    description: "Standard BOM transformation with parent-child relationships",
-    category: "BOM",
-    usageCount: 23,
-    lastUsed: "2 days ago",
-  },
-  {
-    id: "t2",
-    name: "Inventory Mapping",
-    description: "Maps inventory columns to ERP system format",
-    category: "Inventory",
-    usageCount: 15,
-    lastUsed: "1 week ago",
-  },
-  {
-    id: "t3",
-    name: "Parts List Cleanup",
-    description: "Cleans and normalizes parts list data",
-    category: "Parts",
-    usageCount: 8,
-    lastUsed: "3 weeks ago",
-  },
-];
+import { readTemplatesFromStorage } from "@/lib/templates"
 
 const categories = ["All", "BOM", "Inventory", "Parts", "Custom"];
 
 export default function Templates() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [allTemplates, setAllTemplates] = useState(() => readTemplatesFromStorage());
 
-  const filteredTemplates = templates.filter((template) => {
+  const persist = (next: typeof allTemplates) => {
+    setAllTemplates(next);
+    try {
+      localStorage.setItem('templates_v1', JSON.stringify(next));
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  const filteredTemplates = allTemplates.filter((template) => {
     const matchesSearch = template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       template.description.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = selectedCategory === "All" || template.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
+
+  const navigate = useNavigate();
+  const importRef = useRef<HTMLInputElement | null>(null);
+
+  const handleUse = (id: string) => {
+    // Navigate to mapping screen with template id set as query param
+    navigate(`/mapping/new?template=${id}`);
+  };
+
+  const handleDelete = (id: string) => {
+    if (!confirm('Delete this template?')) return;
+    persist(allTemplates.filter((t) => t.id !== id));
+  };
+
+  const handleDuplicate = (id: string) => {
+    const src = allTemplates.find((t) => t.id === id);
+    if (!src) return;
+    const copy = { ...src, id: Math.random().toString(36).slice(2, 9), name: `${src.name} (copy)` };
+    persist([copy, ...allTemplates]);
+  };
+
+  const handleExport = (id: string) => {
+    const tmpl = allTemplates.find((t) => t.id === id);
+    if (!tmpl) return;
+    const blob = new Blob([JSON.stringify(tmpl, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${tmpl.name.replace(/\s+/g, '_')}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleEdit = (id: string) => {
+    const tmpl = allTemplates.find((t) => t.id === id);
+    if (!tmpl) return;
+    const newName = prompt('Template name', tmpl.name);
+    if (newName && newName.trim()) {
+      persist(allTemplates.map((t) => (t.id === id ? { ...t, name: newName } : t)));
+    }
+  };
+
+  const handleImportClick = () => importRef.current?.click();
+  const handleImportFile: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const obj = JSON.parse(String(reader.result));
+        const imported = { ...obj, id: Math.random().toString(36).slice(2, 9) };
+        persist([imported, ...allTemplates]);
+      } catch (err) {
+        alert('Invalid template file');
+      }
+    };
+    reader.readAsText(f);
+    e.currentTarget.value = '';
+  };
 
   return (
     <div className="flex-1 p-4 pt-6 md:p-8">
@@ -75,11 +118,15 @@ export default function Templates() {
           </p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline">
+          <input ref={importRef} type="file" accept="application/json" onChange={handleImportFile} className="hidden" />
+          <Button variant="outline" onClick={handleImportClick}>
             <Upload className="mr-2 h-4 w-4" />
             Import
           </Button>
-          <Button>
+          <Button onClick={() => {
+            const id = Math.random().toString(36).slice(2,9);
+            persist([{ id, name: 'New Template', description: '', category: 'Custom', usageCount: 0, lastUsed: 'never' }, ...allTemplates]);
+          }}>
             <Plus className="mr-2 h-4 w-4" />
             New Template
           </Button>
@@ -129,23 +176,23 @@ export default function Templates() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="bg-popover">
-                      <DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleUse(template.id)}>
                         <Play className="mr-2 h-4 w-4" />
                         Use Template
                       </DropdownMenuItem>
-                      <DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleEdit(template.id)}>
                         <Pencil className="mr-2 h-4 w-4" />
                         Edit
                       </DropdownMenuItem>
-                      <DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDuplicate(template.id)}>
                         <Copy className="mr-2 h-4 w-4" />
                         Duplicate
                       </DropdownMenuItem>
-                      <DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleExport(template.id)}>
                         <Download className="mr-2 h-4 w-4" />
                         Export
                       </DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive focus:text-destructive">
+                      <DropdownMenuItem onClick={() => handleDelete(template.id)} className="text-destructive focus:text-destructive">
                         <Trash2 className="mr-2 h-4 w-4" />
                         Delete
                       </DropdownMenuItem>

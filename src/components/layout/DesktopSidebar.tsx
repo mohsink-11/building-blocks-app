@@ -17,6 +17,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
+import { useProfile } from "@/hooks/useProfile";
 
 interface DesktopSidebarProps {
   collapsed: boolean;
@@ -37,6 +39,9 @@ const bottomNavItems = [
 
 export function DesktopSidebar({ collapsed, onToggle }: DesktopSidebarProps) {
   const location = useLocation();
+
+  const { user } = useAuth();
+  const { profile, loading } = useProfile();
 
   const NavItem = ({ icon: Icon, label, path }: { icon: typeof Home; label: string; path: string }) => {
     const isActive = path === "/dashboard"
@@ -141,29 +146,37 @@ export function DesktopSidebar({ collapsed, onToggle }: DesktopSidebarProps) {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Link to="/settings" className="flex justify-center">
-                  <Avatar className="h-9 w-9">
-                    <AvatarImage src="" />
-                    <AvatarFallback className="bg-primary/10 text-primary text-sm">
-                      <User className="h-4 w-4" />
-                    </AvatarFallback>
-                  </Avatar>
+                   <Avatar className="h-9 w-9">
+            <AvatarImage src={profile?.avatar_url ?? ""} />
+            <AvatarFallback className="bg-primary/10 text-primary text-sm">
+              {profile?.name?.[0]?.toUpperCase() ?? <User className="h-4 w-4" />}
+            </AvatarFallback>
+          </Avatar>
                 </Link>
               </TooltipTrigger>
               <TooltipContent side="right" sideOffset={10}>
-                Profile
+               {profile?.name ?? user?.email}
               </TooltipContent>
             </Tooltip>
           ) : (
             <div className="flex items-center gap-3 rounded-xl bg-muted/50 p-2">
               <Avatar className="h-9 w-9">
-                <AvatarImage src="" />
+                <AvatarImage src={profile?.avatar_url ?? ""} />
                 <AvatarFallback className="bg-primary/10 text-primary text-sm">
-                  <User className="h-4 w-4" />
+                  {profile?.name?.[0]?.toUpperCase() ?? <User className="h-4 w-4" />}
                 </AvatarFallback>
               </Avatar>
+
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm truncate">John Doe</p>
-                <p className="text-xs text-muted-foreground truncate">john@example.com</p>
+                {/* <p className="font-medium text-sm truncate">John Doe</p>
+                <p className="text-xs text-muted-foreground truncate">john@example.com</p> */}
+
+                <p className="font-medium text-sm truncate">
+                  {loading ? "Loading..." : profile?.name ?? "User"}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {user?.email}
+                </p>
               </div>
               <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
                 <LogOut className="h-4 w-4" />

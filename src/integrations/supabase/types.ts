@@ -6,6 +6,9 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
+// Internal key expected by `@supabase/supabase-js` types
+type InternalSupabaseKey = '__InternalSupabase'
+
 export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
@@ -14,13 +17,107 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      projects: {
+        Row: {
+          id: string;
+          owner?: string | null;
+          name: string;
+          description?: string | null;
+          settings?: Json | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner?: string | null;
+          name: string;
+          description?: string | null;
+          settings?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          owner?: string | null;
+          name?: string;
+          description?: string | null;
+          settings?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      templates: {
+        Row: {
+          id: string;
+          owner?: string | null;
+          name: string;
+          description?: string | null;
+          category?: string | null;
+          config?: Json | null;
+          is_public: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner?: string | null;
+          name: string;
+          description?: string | null;
+          category?: string | null;
+          config?: Json | null;
+          is_public?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          owner?: string | null;
+          name?: string;
+          description?: string | null;
+          category?: string | null;
+          config?: Json | null;
+          is_public?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      batch_jobs: {
+        Row: {
+          id: string;
+          args: Json;
+          status: string;
+          result?: Json | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          args: Json;
+          status?: string;
+          result?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          args?: Json;
+          status?: string;
+          result?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      process_batch_job: {
+        Args: {
+          job_id: string;
+        };
+        Returns: unknown;
+      };
     }
     Enums: {
       [_ in never]: never

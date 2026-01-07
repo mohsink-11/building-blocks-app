@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, ArrowRight, Plus, Eye, EyeOff } from "lucide-react";
@@ -8,8 +8,8 @@ import { TargetColumnItem, TargetColumn } from "@/components/mapping/TargetColum
 import { AISuggestionsBar, AISuggestion } from "@/components/mapping/AISuggestionsBar";
 import { MappingPreviewTable } from "@/components/mapping/MappingPreviewTable";
 
-// Placeholder source columns from uploaded Excel
-const initialSourceColumns: SourceColumn[] = [
+// Placeholder source columns from uploaded Excel (fallback)
+const fallbackSourceColumns: SourceColumn[] = [
   { id: "s1", name: "Item Number", type: "string", sampleValues: ["ITEM-001", "ITEM-002"] },
   { id: "s2", name: "Description", type: "string", sampleValues: ["Widget Assembly"] },
   { id: "s3", name: "Quantity", type: "number", sampleValues: ["25", "100"] },
@@ -21,14 +21,14 @@ const initialSourceColumns: SourceColumn[] = [
 ];
 
 const initialTargetColumns: TargetColumn[] = [
-  { id: "t1", name: "Part ID", mappedColumns: ["s1"], delimiter: "" },
-  { id: "t2", name: "Full Description", mappedColumns: ["s2", "s8"], delimiter: " - " },
-  { id: "t3", name: "Qty", mappedColumns: ["s3"], delimiter: "" },
-  { id: "t4", name: "Price", mappedColumns: ["s4"], delimiter: "" },
-  { id: "t5", name: "Vendor", mappedColumns: ["s6"], delimiter: "" },
+  { id: "t1", name: "Part ID", mappedColumns: [], delimiter: "" },
+  { id: "t2", name: "Full Description", mappedColumns: [], delimiter: " - " },
+  { id: "t3", name: "Qty", mappedColumns: [], delimiter: "" },
+  { id: "t4", name: "Price", mappedColumns: [], delimiter: "" },
+  { id: "t5", name: "Vendor", mappedColumns: [], delimiter: "" },
 ];
 
-const initialSuggestions: AISuggestion[] = [
+const fallbackSuggestions: AISuggestion[] = [
   {
     id: "sug1",
     description: "Map 'Lead Time' to a new 'Delivery Days' column",
@@ -54,9 +54,75 @@ const previewRows = [
 
 export default function Mapping() {
   const { projectId } = useParams<{ projectId: string }>();
-  const [sourceColumns] = useState<SourceColumn[]>(initialSourceColumns);
+  const location = useLocation();
+  
+  // Get data from navigation state or sessionStorage
+  const getUploadedData = () => {
+    // First try location state
+    if (location.state) {
+      return location.state as {
+        projectName?: string;
+        fileName?: string;
+        columns?: string[];
+        rowCount?: number;
+        suggestions?: Array<{ 
+          name?: string;
+          suggestedTransformation?: string;
+          justification?: string;
+        }>;
+        fileId?: string;
+      };
+    }
+    
+    // Fallback to sessionStorage
+    const stored = sessionStorage.getItem('mappingData');
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch (e) {
+        return null;
+      }
+    }
+    
+    return null;
+  };
+
+  const uploadedData = getUploadedData();
+
+  // Convert uploaded columns to source columns format
+  const getInitialSourceColumns = (): SourceColumn[] => {
+    if (uploadedData?.columns && uploadedData.columns.length > 0) {
+      return uploadedData.columns.map((col, index) => ({
+        id: `s${index + 1}`,
+        name: col,
+        type: "string", // Default to string, you can enhance this with type detection
+        sampleValues: [] // You'll need to pass sample values from Upload if available
+      }));
+    }
+    
+    // Fallback to hardcoded columns
+    return fallbackSourceColumns;
+  };
+
+  // Convert AI suggestions to the format expected by AISuggestionsBar
+  const getInitialSuggestions = (): AISuggestion[] => {
+    if (uploadedData?.suggestions && uploadedData.suggestions.length > 0) {
+      return uploadedData.suggestions.map((sug, index) => ({
+        id: `sug${index + 1}`,
+        description: `${sug.name}: ${sug.suggestedTransformation} - ${sug.justification}`,
+        sourceColumns: [], // Map based on your suggestion structure
+        targetColumn: sug.name || "new",
+        applied: false,
+      }));
+    }
+    
+    // Fallback suggestions
+    return fallbackSuggestions;
+  };
+
+  const [sourceColumns] = useState<SourceColumn[]>(getInitialSourceColumns());
   const [targetColumns, setTargetColumns] = useState<TargetColumn[]>(initialTargetColumns);
-  const [suggestions, setSuggestions] = useState<AISuggestion[]>(initialSuggestions);
+  const [suggestions, setSuggestions] = useState<AISuggestion[]>(getInitialSuggestions());
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(true);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
@@ -174,7 +240,9 @@ export default function Mapping() {
               Column Mapping
             </h1>
             <p className="text-muted-foreground">
-              Map source columns to target columns for transformation
+              {uploadedData?.fileName 
+                ? `Mapping columns for: ${uploadedData.fileName} (${uploadedData.rowCount || 0} rows)` 
+                : "Map source columns to target columns for transformation"}
             </p>
           </div>
           <div className="flex gap-3">
@@ -187,30 +255,45 @@ export default function Mapping() {
               {showPreview ? <EyeOff className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
               {showPreview ? "Hide Preview" : "Show Preview"}
             </Button>
-            <Button variant="outline" asChild>
-              <Link to={`/rules/${projectId}`}>
-                Configure Rules
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
-            <Button asChild>
-              <Link to={`/preview/${projectId}`}>
-                Preview Data
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
+           <Button asChild>
+  <Link 
+    to={`/preview/${projectId}`}
+    state={{
+      projectName: uploadedData?.projectName,
+      fileName: uploadedData?.fileName,
+      sourceColumns: sourceColumns,
+      targetColumns: targetColumns,
+      rowCount: uploadedData?.rowCount
+    }}
+    onClick={() => {
+      // Also store in sessionStorage as backup
+      sessionStorage.setItem('previewData', JSON.stringify({
+        projectName: uploadedData?.projectName,
+        fileName: uploadedData?.fileName,
+        sourceColumns: sourceColumns,
+        targetColumns: targetColumns,
+        rowCount: uploadedData?.rowCount
+      }));
+    }}
+  >
+    Preview Data
+    <ArrowRight className="ml-2 h-4 w-4" />
+  </Link>
+</Button>
           </div>
         </div>
       </div>
 
       {/* AI Suggestions */}
-      <div className="mb-6">
-        <AISuggestionsBar
-          suggestions={suggestions}
-          onApply={handleApplySuggestion}
-          onDismiss={handleDismissSuggestion}
-        />
-      </div>
+      {suggestions.length > 0 && (
+        <div className="mb-6">
+          <AISuggestionsBar
+            suggestions={suggestions}
+            onApply={handleApplySuggestion}
+            onDismiss={handleDismissSuggestion}
+          />
+        </div>
+      )}
 
       {/* Mapping Interface */}
       <div className="grid gap-6 lg:grid-cols-2">

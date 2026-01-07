@@ -7,11 +7,19 @@ export interface UploadedFileData {
   id: string;
   name: string;
   size: number;
-  status: "uploading" | "validating" | "ready" | "error";
+  status: "uploading" | "validating" | "ready" | "error" | "processing" | "processed";
   progress: number;
   error?: string;
   columns?: string[];
   rowCount?: number;
+  suggestions?: Array<{ 
+  id?: string; 
+  name?: string;
+  suggestedTransformation?: string;
+  justification?: string;
+  text?: string; 
+  mapping?: Record<string, any> 
+}>;
 }
 
 interface FilePreviewCardProps {
@@ -123,20 +131,39 @@ export function FilePreviewCard({ file, onRemove }: FilePreviewCardProps) {
           </p>
 
           {file.status === "ready" && file.columns && (
-            <div className="mt-3 flex flex-wrap gap-1">
-              {file.columns.slice(0, 5).map((col, i) => (
-                <span
-                  key={i}
-                  className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs"
-                >
-                  {col}
-                </span>
-              ))}
-              {file.columns.length > 5 && (
-                <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                  +{file.columns.length - 5} more
-                </span>
-              )}
+            <div className="mt-3">
+              <div className="flex flex-wrap gap-1">
+                {file.columns.slice(0, 5).map((col, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs"
+                  >
+                    {col}
+                  </span>
+                ))}
+                {file.columns.length > 5 && (
+                  <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                    +{file.columns.length - 5} more
+                  </span>
+                )}
+              </div>
+
+              {file.suggestions && file.suggestions.length > 0 && (
+  <div className="mt-3">
+    <h4 className="text-sm font-medium">AI Suggestions</h4>
+    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+      {file.suggestions.map((s, i) => (
+        <div key={i} className="rounded-md border bg-card p-2 text-sm">
+          <div className="font-medium">{s.name || `Suggestion ${i + 1}`}</div>
+          <div className="text-xs text-muted-foreground mb-1">
+            {s.suggestedTransformation}
+          </div>
+          <div className="text-xs text-muted-foreground">{s.justification}</div>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
             </div>
           )}
         </div>

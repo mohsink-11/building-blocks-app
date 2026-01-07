@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -18,6 +18,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { FileSpreadsheet, Eye, EyeOff, Mail, Lock, User } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 
 const registerSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -43,6 +45,9 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const { signUp, signInWithProvider } = useAuth();
+  const { toast } = useToast();
+  const navigate = useNavigate();
 
   const form = useForm<RegisterForm>({
     resolver: zodResolver(registerSchema),
@@ -58,9 +63,20 @@ export default function Register() {
 
   const onSubmit = async (data: RegisterForm) => {
     setIsLoading(true);
-    // TODO: Implement Supabase auth
-    console.log("Register attempt:", data);
-    setTimeout(() => setIsLoading(false), 1000);
+    const { data: res, error } = await signUp(data.email, data.password, { name: data.name, accountType: data.accountType });
+    setIsLoading(false);
+
+    if (error) {
+      toast({ title: 'Registration failed', description: error.message || String(error) });
+      return;
+    }
+
+    toast({ title: 'Registration started', description: 'Check your email for confirmation (if required) or you will be redirected shortly.' });
+    // If immediate session created, redirect to dashboard
+    const maybeRes = res as { session?: unknown } | undefined;
+    if (maybeRes?.session) {
+      navigate('/dashboard');
+    }
   };
 
   return (
@@ -273,7 +289,7 @@ export default function Register() {
 
             {/* Social Login Buttons */}
             <div className="space-y-3">
-              <Button variant="outline" className="w-full min-h-[44px]" type="button">
+              <Button variant="outline" className="w-full min-h-[44px]" type="button" onClick={() => signInWithProvider('google')}>
                 <svg className="mr-2 h-5 w-5" viewBox="0 0 24 24">
                   <path
                     fill="currentColor"
@@ -294,7 +310,7 @@ export default function Register() {
                 </svg>
                 Continue with Google
               </Button>
-              <Button variant="outline" className="w-full min-h-[44px]" type="button">
+              {/* <Button variant="outline" className="w-full min-h-[44px]" type="button" onClick={() => signInWithProvider('microsoft')}>
                 <svg className="mr-2 h-5 w-5" viewBox="0 0 24 24">
                   <path
                     fill="currentColor"
@@ -302,7 +318,7 @@ export default function Register() {
                   />
                 </svg>
                 Continue with Microsoft
-              </Button>
+              </Button> */}
             </div>
 
             <p className="mt-6 text-center text-sm text-muted-foreground">

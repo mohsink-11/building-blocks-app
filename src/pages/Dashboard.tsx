@@ -13,7 +13,7 @@ import {
 import { StatCard } from "@/components/dashboard/StatCard";
 import { ProjectCard, type Project } from "@/components/dashboard/ProjectCard";
 import { QuickUploadFAB } from "@/components/dashboard/QuickUploadFAB";
-
+import { useProfile } from "@/hooks/useProfile";
 // Placeholder data - will be replaced with real data from Supabase
 const recentProjects: Project[] = [
   { id: "1", name: "Q4 BOM Transform", lastEdited: "2 hours ago", status: "completed" },

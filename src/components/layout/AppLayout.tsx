@@ -1,7 +1,9 @@
 import { Outlet, Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { FileSpreadsheet, Menu } from "lucide-react";
+import { FileSpreadsheet, Menu, LogOut } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { BottomTabBar } from "./BottomTabBar";
 import { MobileDrawer } from "./MobileDrawer";
 import { DesktopSidebar } from "./DesktopSidebar";
@@ -9,6 +11,8 @@ import { DesktopSidebar } from "./DesktopSidebar";
 export default function AppLayout() {
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const { user, signOut } = useAuth();
+  const { toast } = useToast();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     const saved = localStorage.getItem("sidebar-collapsed");
     return saved ? JSON.parse(saved) : false;
@@ -23,6 +27,28 @@ export default function AppLayout() {
   useEffect(() => {
     setDrawerOpen(false);
   }, [location.pathname]);
+
+  // Show PWA update/offline notifications
+  useEffect(() => {
+    const onNeedRefresh = () => {
+      // Basic prompt - we keep it simple for now
+      if (window.confirm('A new version is available. Refresh now to update?')) {
+        window.location.reload();
+      }
+    };
+
+    const onOfflineReady = () => {
+      toast({ title: 'Offline ready', description: 'The app is available offline.' });
+    };
+
+    window.addEventListener('sw:need-refresh', onNeedRefresh as EventListener);
+    window.addEventListener('sw:offline-ready', onOfflineReady as EventListener);
+
+    return () => {
+      window.removeEventListener('sw:need-refresh', onNeedRefresh as EventListener);
+      window.removeEventListener('sw:offline-ready', onOfflineReady as EventListener);
+    };
+  }, [toast]);
 
   return (
     <div className="flex min-h-screen w-full bg-background">
@@ -52,6 +78,27 @@ export default function AppLayout() {
             </div>
             <span className="font-bold">ASPIRANT</span>
           </Link>
+
+          <div className="ml-auto">
+            {user ? (
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-md px-2 py-1 text-sm text-muted-foreground hover:text-foreground"
+                onClick={async () => {
+                  const { error } = await signOut();
+                  if (error) {
+                    toast({ title: 'Sign out failed', description: error.message || String(error) });
+                  } else {
+                    toast({ title: 'Signed out' });
+                    // redirect to landing
+                    window.location.href = '/';
+                  }
+                }}
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
         </header>
 
         {/* Main Content */}

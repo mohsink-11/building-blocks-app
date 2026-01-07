@@ -19,7 +19,7 @@ import Settings from "./pages/Settings";
 import Help from "./pages/Help";
 import NotFound from "./pages/NotFound";
 import AppLayout from "./components/layout/AppLayout";
-
+import Confirm from "./pages/Confirm";
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -34,7 +34,7 @@ const App = () => (
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
-          
+          <Route path="/auth/confirm" element={<Confirm />} />
           {/* App routes with layout */}
           <Route element={<AppLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />

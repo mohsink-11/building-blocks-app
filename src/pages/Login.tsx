@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -17,6 +17,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { FileSpreadsheet, Eye, EyeOff, Mail, Lock } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -29,6 +31,9 @@ type LoginForm = z.infer<typeof loginSchema>;
 export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
+  const { signIn, signInWithProvider } = useAuth();
+  const { toast } = useToast();
 
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -41,9 +46,62 @@ export default function Login() {
 
   const onSubmit = async (data: LoginForm) => {
     setIsLoading(true);
-    // TODO: Implement Supabase auth
-    console.log("Login attempt:", data);
-    setTimeout(() => setIsLoading(false), 1000);
+    const { data: res, error } = await signIn(data.email, data.password);
+    setIsLoading(false);
+
+    if (error) {
+      toast({ title: 'Sign in failed', description: error.message || String(error) });
+      return;
+    }
+
+    toast({ title: 'Signed in', description: 'Redirecting to the dashboard...' });
+    navigate('/dashboard');
+  };
+
+  const handleSocial = async (provider: 'google' | 'azure') => {
+    setIsLoading(true);
+    const { data, error } = await signInWithProvider(provider);
+    setIsLoading(false);
+
+    if (error) {
+      toast({ title: 'Social login failed', description: error.message || String(error) });
+      return;
+    }
+
+    // Supabase will often redirect immediately for OAuth. If it returns a url, navigate to it.
+    const maybeData = data as { url?: string } | undefined;
+    if (maybeData?.url) {
+      // Log the returned URL to help debug redirect origin/port mismatches
+      // (temporary) — remove after verifying the redirect works
+      // eslint-disable-next-line no-console
+      console.log('[auth] provider returned url:', maybeData.url);
+
+      // If the returned url includes a `redirect_to` query that points to an unexpected origin
+      // (e.g. http://localhost:3000), replace it with the current origin so the browser goes to
+      // the running dev server instead.
+      try {
+        const url = new URL(maybeData.url);
+        const redirectParam = url.searchParams.get('redirect_to') || url.searchParams.get('redirect_to');
+        if (redirectParam) {
+          const parsedRedirect = new URL(redirectParam);
+          if (parsedRedirect.origin !== window.location.origin) {
+            // swap to current origin
+            url.searchParams.set('redirect_to', `${window.location.origin}/dashboard`);
+            const fixed = url.toString();
+            // eslint-disable-next-line no-console
+            console.log('[auth] adjusted oauth url to current origin:', fixed);
+            window.location.href = fixed;
+            return;
+          }
+        }
+      } catch (e) {
+        // ignore parsing errors
+      }
+
+      window.location.href = maybeData.url;
+    } else {
+      toast({ title: 'Social sign-in started' });
+    }
   };
 
   return (
@@ -169,7 +227,7 @@ export default function Login() {
 
             {/* Social Login Buttons */}
             <div className="space-y-3">
-              <Button variant="outline" className="w-full min-h-[44px]" type="button">
+              <Button variant="outline" className="w-full min-h-[44px]" type="button" onClick={() => handleSocial('google') }>
                 <svg className="mr-2 h-5 w-5" viewBox="0 0 24 24">
                   <path
                     fill="currentColor"
@@ -190,7 +248,7 @@ export default function Login() {
                 </svg>
                 Continue with Google
               </Button>
-              <Button variant="outline" className="w-full min-h-[44px]" type="button">
+              {/* <Button variant="outline" className="w-full min-h-[44px]" type="button" onClick={() => handleSocial('azure') }>
                 <svg className="mr-2 h-5 w-5" viewBox="0 0 24 24">
                   <path
                     fill="currentColor"
@@ -198,7 +256,7 @@ export default function Login() {
                   />
                 </svg>
                 Continue with Microsoft
-              </Button>
+              </Button> */}
             </div>
 
             <p className="mt-6 text-center text-sm text-muted-foreground">

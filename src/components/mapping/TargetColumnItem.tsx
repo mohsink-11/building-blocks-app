@@ -70,7 +70,7 @@ export function TargetColumnItem({
     >
       <div className="flex items-start gap-3">
         <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab shrink-0 mt-1" />
-        
+
         <div className="flex-1 min-w-0">
           {/* Column Name */}
           <div className="flex items-center gap-2 mb-3">
@@ -104,20 +104,26 @@ export function TargetColumnItem({
                   <div>
                     <label className="text-sm font-medium">Delimiter</label>
                     <Select
-                      value={column.delimiter || " - "}
-                      onValueChange={(v) => onUpdateColumn({ delimiter: v })}
+                      value={column.delimiter ?? " - "}
+                      onValueChange={(v) =>
+                        onUpdateColumn({
+                          delimiter: v === "none" ? "" : v, // convert sentinel → empty
+                        })
+                      }
                     >
                       <SelectTrigger className="mt-1">
-                        <SelectValue />
+                        <SelectValue placeholder="Select delimiter" />
                       </SelectTrigger>
+
                       <SelectContent>
                         <SelectItem value=" - ">Dash ( - )</SelectItem>
                         <SelectItem value=", ">Comma (, )</SelectItem>
                         <SelectItem value=" | ">Pipe ( | )</SelectItem>
                         <SelectItem value=" ">Space</SelectItem>
-                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value="none">None</SelectItem> {/* ✅ FIX */}
                       </SelectContent>
                     </Select>
+
                   </div>
                   <div>
                     <label className="text-sm font-medium">Static Value</label>
