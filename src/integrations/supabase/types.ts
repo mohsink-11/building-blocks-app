@@ -6,9 +6,6 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-// Internal key expected by `@supabase/supabase-js` types
-type InternalSupabaseKey = '__InternalSupabase'
-
 export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
@@ -17,107 +14,242 @@ export type Database = {
   }
   public: {
     Tables: {
-      projects: {
-        Row: {
-          id: string;
-          owner?: string | null;
-          name: string;
-          description?: string | null;
-          settings?: Json | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          owner?: string | null;
-          name: string;
-          description?: string | null;
-          settings?: Json | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          owner?: string | null;
-          name?: string;
-          description?: string | null;
-          settings?: Json | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
-      templates: {
-        Row: {
-          id: string;
-          owner?: string | null;
-          name: string;
-          description?: string | null;
-          category?: string | null;
-          config?: Json | null;
-          is_public: boolean;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          owner?: string | null;
-          name: string;
-          description?: string | null;
-          category?: string | null;
-          config?: Json | null;
-          is_public?: boolean;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          owner?: string | null;
-          name?: string;
-          description?: string | null;
-          category?: string | null;
-          config?: Json | null;
-          is_public?: boolean;
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
       batch_jobs: {
         Row: {
-          id: string;
-          args: Json;
-          status: string;
-          result?: Json | null;
-          created_at: string;
-          updated_at: string;
-        };
+          args: Json | null
+          created_at: string | null
+          id: string
+          owner: string | null
+          progress: number | null
+          result: Json | null
+          status: string | null
+          updated_at: string | null
+        }
         Insert: {
-          id?: string;
-          args: Json;
-          status?: string;
-          result?: Json | null;
-          created_at?: string;
-          updated_at?: string;
-        };
+          args?: Json | null
+          created_at?: string | null
+          id?: string
+          owner?: string | null
+          progress?: number | null
+          result?: Json | null
+          status?: string | null
+          updated_at?: string | null
+        }
         Update: {
-          id?: string;
-          args?: Json;
-          status?: string;
-          result?: Json | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
+          args?: Json | null
+          created_at?: string | null
+          id?: string
+          owner?: string | null
+          progress?: number | null
+          result?: Json | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      mappings: {
+        Row: {
+          created_at: string | null
+          id: string
+          mapping: Json
+          project_id: string | null
+          template_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          mapping: Json
+          project_id?: string | null
+          template_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          mapping?: Json
+          project_id?: string | null
+          template_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mappings_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mappings_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          account_type: string | null
+          avatar_url: string | null
+          created_at: string | null
+          id: string
+          metadata: Json | null
+          name: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          account_type?: string | null
+          avatar_url?: string | null
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          name?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          account_type?: string | null
+          avatar_url?: string | null
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          name?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      projects: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          name: string
+          owner: string | null
+          settings: Json | null
+          status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          owner?: string | null
+          settings?: Json | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          owner?: string | null
+          settings?: Json | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      templates: {
+        Row: {
+          category: string | null
+          config: Json | null
+          created_at: string | null
+          description: string | null
+          id: string
+          is_public: boolean | null
+          name: string
+          owner: string | null
+          updated_at: string | null
+          usage_count: number | null
+        }
+        Insert: {
+          category?: string | null
+          config?: Json | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_public?: boolean | null
+          name: string
+          owner?: string | null
+          updated_at?: string | null
+          usage_count?: number | null
+        }
+        Update: {
+          category?: string | null
+          config?: Json | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_public?: boolean | null
+          name?: string
+          owner?: string | null
+          updated_at?: string | null
+          usage_count?: number | null
+        }
+        Relationships: []
+      }
+      uploads: {
+        Row: {
+          columns: Json | null
+          created_at: string | null
+          filename: string
+          id: string
+          metadata: Json | null
+          owner: string | null
+          project_id: string | null
+          row_count: number | null
+          size: number | null
+          status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          columns?: Json | null
+          created_at?: string | null
+          filename: string
+          id?: string
+          metadata?: Json | null
+          owner?: string | null
+          project_id?: string | null
+          row_count?: number | null
+          size?: number | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          columns?: Json | null
+          created_at?: string | null
+          filename?: string
+          id?: string
+          metadata?: Json | null
+          owner?: string | null
+          project_id?: string | null
+          row_count?: number | null
+          size?: number | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "uploads_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      process_batch_job: {
-        Args: {
-          job_id: string;
-        };
-        Returns: unknown;
-      };
+      process_batch_job: { Args: { job_id: string }; Returns: undefined }
     }
     Enums: {
       [_ in never]: never
