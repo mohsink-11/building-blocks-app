@@ -8,7 +8,9 @@ import { ArrowRight, FolderPlus, FileSpreadsheet, Sparkles } from "lucide-react"
 import { FileDropZone } from "@/components/upload/FileDropZone";
 import { FilePreviewCard, UploadedFileData } from "@/components/upload/FilePreviewCard";
 import { useToast } from "@/hooks/use-toast";
-import { createBatchJob, processBatchJob, getMappingSuggestions } from "@/integrations/supabase/api";
+import { createBatchJob, processBatchJob, getMappingSuggestions, createProject } from "@/integrations/supabase/api";
+import { useAuth } from '@/hooks/useAuth';
+import { deriveLeafHeaders, detectHeaderRows } from "../lib/headers";
 
 export default function Upload() {
   const navigate = useNavigate();
@@ -16,6 +18,7 @@ export default function Upload() {
   const [isDragActive, setIsDragActive] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFileData[]>([]);
   const [projectName, setProjectName] = useState("");
+  const [headerRowsCount, setHeaderRowsCount] = useState<string>(""); // empty = auto-detect
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -76,77 +79,22 @@ export default function Upload() {
       setProjectName(baseName);
     }
 
-    setUploadedFiles((prev) => [newFile, ...prev]);
+    // Attach original file so we can read headers later when user clicks Continue
+    const newFileWithObj: UploadedFileData = { ...newFile, fileObj: file };
+    setUploadedFiles((prev) => [newFileWithObj, ...prev]);
 
     if (!validation.valid) return;
 
-    // Try to detect headers from file (CSV or Excel). Fall back to defaults on error.
-    let detectedColumns: string[] | undefined;
-    try {
-      if (file.type === 'text/csv' || file.name.toLowerCase().endsWith('.csv')) {
-        const text = await file.text();
-        const firstLine = text.split(/\r?\n/)[0] || '';
-        detectedColumns = firstLine
-          .split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
-          .map((s) => s.replace(/^"|"$/g, '').trim())
-          .filter(Boolean);
-      } else {
-        // Dynamic import to avoid bundling if not installed
-        const ab = await file.arrayBuffer();
-        try {
-          const XLSX = await import('xlsx');
-          const wb = XLSX.read(ab, { type: 'array' });
-          const first = wb.SheetNames[0];
-          const ws = wb.Sheets[first];
-          const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
-          if (Array.isArray(rows) && rows.length > 0) {
-            const headerRow = rows[0] as any[];
-            detectedColumns = headerRow.map((c) => String(c ?? '').trim()).filter(Boolean);
-          }
-        } catch (e) {
-          // xlsx not available or parse error; ignore and fallback
-          detectedColumns = undefined;
-        }
-      }
-    } catch (e) {
-      detectedColumns = undefined;
-    }
-
+    // Simulate upload progress but DO NOT parse headers yet — user will enter header rows and click Continue to read headers
     let progress = 0;
     const interval = setInterval(() => {
       progress += Math.random() * 15 + 5;
       if (progress >= 100) {
         clearInterval(interval);
+        // Mark as uploaded (awaiting header read)
         setUploadedFiles((prev) =>
-          prev.map((f) => (f.id === id ? { ...f, status: "validating", progress: 100 } : f))
+          prev.map((f) => (f.id === id ? { ...f, status: "uploaded", progress: 100 } : f))
         );
-        // Simulate validation and column detection
-        setTimeout(() => {
-          setUploadedFiles((prev) =>
-            prev.map((f) =>
-              f.id === id
-                ? {
-                  ...f,
-                  status: "ready",
-                  columns:
-                    detectedColumns && detectedColumns.length > 0
-                      ? detectedColumns
-                      : [
-                        "Item Number",
-                        "Description",
-                        "Quantity",
-                        "Unit Price",
-                        "Category",
-                        "Supplier",
-                        "Lead Time",
-                        "Notes",
-                      ],
-                  rowCount: Math.floor(Math.random() * 2000) + 50,
-                }
-                : f
-            )
-          );
-        }, 800 + Math.random() * 1000);
       } else {
         setUploadedFiles((prev) =>
           prev.map((f) => (f.id === id ? { ...f, progress: Math.min(Math.round(progress), 99) } : f))
@@ -191,6 +139,8 @@ export default function Upload() {
   const handleRemoveFile = (id: string) => {
     setUploadedFiles((prev) => prev.filter((f) => f.id !== id));
   };
+
+  const { user, session } = useAuth();
 
   const handleProcessBatch = async () => {
     const readyFiles = uploadedFiles.filter((f) => f.status === "ready");
@@ -289,7 +239,140 @@ export default function Upload() {
   };
 
   const singleReadyFile = uploadedFiles.length === 1 && uploadedFiles[0].status === "ready";
-  const canContinue = singleReadyFile && projectName.trim().length > 0;
+  // Allow Continue to be used to trigger header reading when a single file is uploaded
+  const singleUploadedFile = uploadedFiles.length === 1 && uploadedFiles[0].status === "uploaded";
+  const canContinue = (singleReadyFile || singleUploadedFile) && projectName.trim().length > 0;
+
+  const readHeadersForFile = useCallback(async (fileId: string) => {
+    try {
+      const fileEntry = uploadedFiles.find((f) => f.id === fileId);
+    if (!fileEntry || !fileEntry.fileObj) return;
+
+    const file = fileEntry.fileObj;
+
+    let detectedColumns: string[] | undefined;
+    let headerRowsUsed: string[][] | undefined;
+
+    let allRows: any[][] | undefined = undefined;
+
+    try {
+      if (file.type === 'text/csv' || file.name.toLowerCase().endsWith('.csv')) {
+        const text = await file.text();
+        const lines = text.split(/\r?\n/).filter(Boolean).slice(0, 40); // peek first 40 lines
+        const rows = lines.map((l) =>
+          l
+            .split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
+            .map((s) => s.replace(/^"|"$/g, '').trim())
+        );
+        allRows = rows;
+        const maxHeaders = headerRowsCount && Number(headerRowsCount) > 0 ? Number(headerRowsCount) : undefined;
+        detectedColumns = deriveLeafHeaders(rows as any[][], maxHeaders ?? 10);
+        headerRowsUsed = detectHeaderRows(rows as any[][], maxHeaders ?? 10);
+      } else {
+        const ab = await file.arrayBuffer();
+        try {
+          const XLSX = await import('xlsx');
+          const wb = XLSX.read(ab, { type: 'array' });
+          const first = wb.SheetNames[0];
+          const ws = wb.Sheets[first];
+          const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+          if (Array.isArray(rows) && rows.length > 0) {
+            allRows = rows as any[][];
+            const maxHeaders = headerRowsCount && Number(headerRowsCount) > 0 ? Number(headerRowsCount) : undefined;
+            detectedColumns = deriveLeafHeaders(rows as any[][], maxHeaders ?? 10);
+            headerRowsUsed = detectHeaderRows(rows as any[][], maxHeaders ?? 10);
+          }
+        } catch (e) {
+          detectedColumns = undefined;
+        }
+      }
+    } catch (e) {
+      detectedColumns = undefined;
+    }
+
+    const finalColumns =
+      detectedColumns && detectedColumns.length > 0
+        ? detectedColumns
+        : [
+            'Item Number',
+            'Description',
+            'Quantity',
+            'Unit Price',
+            'Category',
+            'Supplier',
+            'Lead Time',
+            'Notes',
+          ];
+
+    // Determine sample rows: rows immediately after header rows, up to 5 rows
+    let sampleRows: string[][] | undefined = undefined;
+
+    try {
+      // We have access to 'rows' in both CSV and XLSX branches above; if not, re-read first 20 rows
+      if (!allRows) {
+        // fallback: try to re-read a small portion
+        if (file.type === 'text/csv' || file.name.toLowerCase().endsWith('.csv')) {
+          const text = await file.text();
+          const lines = text.split(/\r?\n/).filter(Boolean).slice(0, 40);
+          allRows = lines.map((l) => l.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map((s) => s.replace(/^"|"$/g, '').trim()));
+        } else {
+          const ab2 = await file.arrayBuffer();
+          try {
+            const XLSX = await import('xlsx');
+            const wb2 = XLSX.read(ab2, { type: 'array' });
+            const first2 = wb2.SheetNames[0];
+            const ws2 = wb2.Sheets[first2];
+            const r = XLSX.utils.sheet_to_json(ws2, { header: 1 });
+            if (Array.isArray(r)) allRows = r as any[][];
+          } catch (e) {
+            // ignore
+          }
+        }
+      }
+
+
+    } catch (e) {
+      sampleRows = undefined;
+    }
+
+    // Compute header count for slicing rows and saving dataRows
+    const headerCount = headerRowsUsed && headerRowsUsed.length > 0 ? headerRowsUsed.length : (headerRowsCount && Number(headerRowsCount) > 0 ? Number(headerRowsCount) : 1);
+    if (allRows && allRows.length > headerCount) {
+      sampleRows = allRows.slice(headerCount, headerCount + 5).map((r) => r.map((c) => (c == null ? '' : String(c))));
+    }
+
+    setUploadedFiles((prev) =>
+      prev.map((f) =>
+        f.id === fileId
+          ? {
+              ...f,
+              status: 'ready',
+              columns: finalColumns,
+              headerRows: headerRowsUsed,
+              samples: sampleRows,
+              dataRows: allRows && allRows.length > headerCount ? allRows.slice(headerCount).map(r => r.map((c) => (c == null ? '' : String(c)))) : undefined,
+              rowCount: Math.floor(Math.random() * 2000) + 50,
+            }
+          : f
+      )
+    );
+
+    // fetch AI suggestions for the file now that columns are available
+    setTimeout(() => {
+      const updated = uploadedFiles.find((f) => f.id === fileId);
+      if (updated && updated.columns) {
+        fetchSuggestionsForFile(fileId, updated.columns);
+      }
+    }, 100);
+
+    return finalColumns;
+    } catch (err) {
+      // Surface unexpected errors and mark the file as errored
+      setUploadedFiles((prev) => prev.map((f) => (f.id === fileId ? { ...f, status: 'error', error: String(err) } : f)));
+      toast({ title: 'Failed to read headers', description: String(err), variant: 'destructive' });
+      return undefined;
+    }
+  }, [uploadedFiles, headerRowsCount, fetchSuggestionsForFile, toast]);
 
   return (
     <div
@@ -319,15 +402,30 @@ export default function Upload() {
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="space-y-2">
-              <Label htmlFor="project-name">Project Name</Label>
-              <Input
-                id="project-name"
-                placeholder="Enter project name..."
-                value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
-                className="h-11"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="project-name">Project Name</Label>
+                <Input
+                  id="project-name"
+                  placeholder="Enter project name..."
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  className="h-11"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="header-rows">Header rows (leave empty for auto)</Label>
+                <Input
+                  id="header-rows"
+                  placeholder="e.g. 2"
+                  type="number"
+                  min={1}
+                  value={headerRowsCount}
+                  onChange={(e) => setHeaderRowsCount(e.target.value)}
+                  className="h-11"
+                />
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -384,18 +482,65 @@ export default function Upload() {
           </Button>
 
           <Button
-            onClick={() => {
-              const readyFile = uploadedFiles.find(f => f.status === 'ready');
+            onClick={async () => {
+              // If uploaded file exists but headers haven't been read, read them now and display
+              const uploaded = uploadedFiles.find((f) => f.status === 'uploaded');
+              if (uploaded) {
+                // read headers using current headerRowsCount
+                const cols = await readHeadersForFile(uploaded.id);
+                toast({ title: 'Headers read', description: `Detected ${cols?.length ?? 0} columns` });
+                return;
+              }
+
+              // If a ready file exists and user clicked again, navigate to mapping
+              const readyFile = uploadedFiles.find((f) => f.status === 'ready');
               if (readyFile && canContinue) {
-                navigate("/mapping/new", {
-                  state: {
-                    projectName,
-                    fileName: readyFile.name,
-                    columns: readyFile.columns,
-                    rowCount: readyFile.rowCount,
-                    suggestions: readyFile.suggestions,
-                    fileId: readyFile.id
+                // Persist mapping data into sessionStorage as a backup and include samples/header rows
+                const mappingState = {
+                  projectName,
+                  fileName: readyFile.name,
+                  columns: readyFile.columns,
+                  rowCount: readyFile.rowCount,
+                  suggestions: readyFile.suggestions,
+                  fileId: readyFile.id,
+                  headerRows: readyFile.headerRows,
+                  samples: readyFile.samples,
+                  rows: readyFile.dataRows,
+                  projectId: undefined as string | undefined,
+                };
+
+                try {
+                  // If Supabase is configured, create a project record and persist its id
+                  const hasSupabase = Boolean(import.meta.env.VITE_SUPABASE_URL);
+                  if (hasSupabase) {
+                    // Only attempt create if user authenticated and a session exists
+                    if (!user || !session) {
+                      toast({ title: 'Sign in required', description: 'Please sign in to create a project in Supabase.', variant: 'destructive' });
+                    } else {
+                      const projectNameToUse = projectName || readyFile.name || 'Untitled Project';
+                      const { data: projectRes, error: projectErr } = await createProject({ name: projectNameToUse, description: `Imported ${readyFile.name}`, owner: user.id });
+                      if (projectErr || !projectRes) {
+                        console.warn('Project creation failed', projectErr);
+                        if (projectErr?.message?.includes('row-level') || projectErr?.code === '42501') {
+                          toast({ title: 'Save Blocked (RLS)', description: 'Row Level Security prevents creating project. Sign in or update table policies.', variant: 'destructive' });
+                        }
+                      } else {
+                        mappingState.projectId = projectRes.id;
+                      }
+                    }
                   }
+                } catch (err) {
+                  // ignore project creation failures
+                  console.warn('createProject error', err);
+                }
+
+                // Persist mapping data into sessionStorage as a backup and include samples/header rows
+                sessionStorage.setItem('mappingData', JSON.stringify(mappingState));
+
+                // Navigate to mapping page; if we have a project id, open that project-specific URL
+                const mappingPath = mappingState.projectId ? `/mapping/${mappingState.projectId}` : '/mapping/new';
+                navigate(mappingPath, {
+                  state: mappingState,
                 });
               }
             }}

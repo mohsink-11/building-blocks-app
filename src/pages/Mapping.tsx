@@ -1,6 +1,9 @@
-import { useState, useCallback } from "react";
-import { Link, useParams, useLocation } from "react-router-dom";
+import { useState, useCallback, useEffect } from "react";
+import { Link, useParams, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { createProject, updateProject } from "@/integrations/supabase/api";
+import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, ArrowRight, Plus, Eye, EyeOff } from "lucide-react";
 import { SourceColumnItem, SourceColumn } from "@/components/mapping/SourceColumnItem";
@@ -46,11 +49,26 @@ const fallbackSuggestions: AISuggestion[] = [
 ];
 
 // Preview sample data
-const previewRows = [
-  { t1: "ITEM-001", t2: "Widget Assembly - High priority", t3: "25", t4: "$49.99", t5: "Acme Corp" },
-  { t1: "ITEM-002", t2: "Gear Component - Standard", t3: "100", t4: "$12.50", t5: "Parts Inc" },
-  { t1: "ITEM-003", t2: "Motor Unit - Replacement", t3: "5", t4: "$299.00", t5: "MotorWorks" },
-];
+// Build preview rows from sample values and current mappings
+const buildPreviewRows = (srcCols: SourceColumn[], tgtCols: TargetColumn[], sampleCount = 3) => {
+  const rows: Record<string, string>[] = [];
+  for (let i = 0; i < sampleCount; i++) {
+    const row: Record<string, string> = {};
+    for (const t of tgtCols) {
+      if (t.mappedColumns && t.mappedColumns.length > 0) {
+        const parts = t.mappedColumns.map((sId) => {
+          const s = srcCols.find((sc) => sc.id === sId);
+          return s?.sampleValues?.[i] ?? "";
+        }).filter(Boolean);
+        row[t.id] = parts.join(t.delimiter ?? "");
+      } else {
+        row[t.id] = "-";
+      }
+    }
+    rows.push(row);
+  }
+  return rows;
+};
 
 export default function Mapping() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -88,15 +106,49 @@ export default function Mapping() {
   };
 
   const uploadedData = getUploadedData();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const { user, session } = useAuth();
+
+  // If navigation included a `selectedTargetId` or the URL has a hash, scroll to that target element
+  useEffect(() => {
+    try {
+      const stateAny = location.state as any;
+      const selectedTargetId = stateAny?.selectedTargetId as string | undefined;
+      const hashTarget = location.hash ? location.hash.replace('#', '') : undefined;
+      const targetId = selectedTargetId || hashTarget;
+      if (targetId) {
+        // small timeout to allow the target list to render
+        setTimeout(() => {
+          const el = document.getElementById(`target-${targetId}`) || document.getElementById(targetId);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // briefly highlight the element
+            el.classList.add('ring', 'ring-2', 'ring-primary');
+            setTimeout(() => el.classList.remove('ring', 'ring-2', 'ring-primary'), 2000);
+          }
+        }, 120);
+      }
+    } catch (err) {
+      // ignore
+    }
+  // only run when location changes
+  }, [location]);
 
   // Convert uploaded columns to source columns format
   const getInitialSourceColumns = (): SourceColumn[] => {
-    if (uploadedData?.columns && uploadedData.columns.length > 0) {
+    // Support two shapes: `columns: string[]` (Upload) and `sourceColumns: Array<{id,name,...}>` (Preview)
+    if (uploadedData?.sourceColumns && Array.isArray(uploadedData.sourceColumns) && uploadedData.sourceColumns.length > 0) {
+      return (uploadedData.sourceColumns as any[]).map((c, idx) => ({ id: c.id ?? `s${idx+1}`, name: c.name ?? `Column ${idx+1}`, type: c.type ?? 'string', sampleValues: c.sampleValues || [] }));
+    }
+
+    if (uploadedData?.columns && Array.isArray(uploadedData.columns) && uploadedData.columns.length > 0) {
+      const samples: string[][] | undefined = uploadedData?.samples ?? (uploadedData?.rows ? (uploadedData.rows as string[][]).slice(0, 5) : undefined);
       return uploadedData.columns.map((col, index) => ({
         id: `s${index + 1}`,
         name: col,
-        type: "string", // Default to string, you can enhance this with type detection
-        sampleValues: [] // You'll need to pass sample values from Upload if available
+        type: "string", // Default to string
+        sampleValues: samples && samples.length > 0 ? samples.map((r) => String(r[index] ?? "")) : []
       }));
     }
     
@@ -120,8 +172,23 @@ export default function Mapping() {
     return fallbackSuggestions;
   };
 
-  const [sourceColumns] = useState<SourceColumn[]>(getInitialSourceColumns());
-  const [targetColumns, setTargetColumns] = useState<TargetColumn[]>(initialTargetColumns);
+  const [sourceColumns, setSourceColumns] = useState<SourceColumn[]>(getInitialSourceColumns());
+  const [targetColumns, setTargetColumns] = useState<TargetColumn[]>(() => {
+    // Prefer targetColumns passed via state (Preview -> Mapping edit) or sessionStorage mappingData
+    try {
+      if (location.state && (location.state as any).targetColumns) {
+        return (location.state as any).targetColumns as TargetColumn[];
+      }
+      const stored = sessionStorage.getItem('mappingData');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed?.targetColumns) return parsed.targetColumns as TargetColumn[];
+      }
+    } catch (err) {
+      // ignore
+    }
+    return initialTargetColumns;
+  });
   const [suggestions, setSuggestions] = useState<AISuggestion[]>(getInitialSuggestions());
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(true);
@@ -255,6 +322,113 @@ export default function Mapping() {
               {showPreview ? <EyeOff className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
               {showPreview ? "Hide Preview" : "Show Preview"}
             </Button>
+
+            {/* Save Project button: create project in Supabase if not present */}
+            <Button
+              data-testid="save-project"
+              variant="ghost"
+              size="sm"
+              onClick={async () => {
+                try {
+                  // Determine if we already have a project id
+                  const stateAny = location.state as any;
+                  const stored = sessionStorage.getItem('mappingData');
+                  const parsed = stored ? JSON.parse(stored) : {};
+                  const pathParam = projectId; // from useParams()
+                  const isExplicitNew = location.pathname.includes('/mapping/new') || pathParam === 'new' || pathParam === undefined;
+                  const existingProjectId = isExplicitNew ? undefined : (stateAny?.projectId || parsed?.projectId || pathParam);
+
+                  const projectNameToUse = uploadedData?.fileName || 'Untitled Project';
+
+                  // Debug: log save action entry so tests can detect handler execution
+                  // eslint-disable-next-line no-console
+                  console.log('saveProject handler invoked', { pathParam, isExplicitNew, existingProjectId, userId: user?.id, hasSession: !!session, parsedHasProjectId: !!parsed?.projectId });
+
+                  if (existingProjectId) {
+                    // Update existing project
+                    const payload: any = { name: projectNameToUse, description: `Updated mapping for ${projectNameToUse}`, settings: { mapping: { sourceColumns, targetColumns } } };
+                    const { data: updRes, error: updErr } = await updateProject(existingProjectId, payload);
+                    if (updErr || !updRes) {
+                      if (updErr?.message?.includes('row-level') || updErr?.code === '42501') {
+                        toast({ title: 'Save Blocked (RLS)', description: 'Row Level Security prevents updating this project. Authenticate or adjust table policies.', variant: 'destructive' });
+                      } else {
+                        toast({ title: 'Save Failed', description: 'Could not update project', variant: 'destructive' });
+                      }
+                      console.warn('updateProject failed', updErr);
+                      return;
+                    }
+
+                    const newMappingData = { ...(parsed || {}), projectId: existingProjectId, sourceColumns, targetColumns, rows: uploadedData?.rows, fileName: uploadedData?.fileName };
+                    sessionStorage.setItem('mappingData', JSON.stringify(newMappingData));
+
+                    // Also merge mapping changes into previewData so Preview reflects the latest mappings
+                    try {
+                      const previewRaw = sessionStorage.getItem('previewData');
+                      const previewBase = previewRaw ? JSON.parse(previewRaw) : {};
+                      const mergedPreview = { ...previewBase, fileName: uploadedData?.fileName, sourceColumns, targetColumns, rows: uploadedData?.rows };
+                      sessionStorage.setItem('previewData', JSON.stringify(mergedPreview));
+                    } catch (e) {
+                      // ignore preview merge errors
+                      console.warn('previewData merge failed', e);
+                    }
+
+                    toast({ title: 'Mapping Saved', description: `Mapping saved to project ${updRes.name}` });
+                    navigate(`/mapping/${existingProjectId}`, { state: newMappingData });
+                    return;
+                  }
+
+                  // Create new project if none exists
+                  // Require an authenticated session (not just a user object) before calling the Supabase API.
+                  // This helps avoid anonymous requests that trigger RLS 403 errors on the server.
+                  if (!user || !session) {
+                    toast({ title: 'Sign in required', description: 'Please sign in before creating a project.', variant: 'destructive' });
+                    return;
+                  }
+
+                  // eslint-disable-next-line no-console
+                  console.log('about to call createProject', { pathParam: projectId, locationPath: location.pathname, stateAny: stateAny?.projectId, userId: user?.id, hasSession: !!session });
+
+                  // Include owner/created_by to satisfy common RLS policies that require auth.uid()
+                  const payload: any = { name: projectNameToUse, description: `Mapping for ${projectNameToUse}` };
+                  if (user?.id) payload.owner = user.id;
+
+                  const { data: projectRes, error: projectErr } = await createProject(payload);
+                  if (projectErr || !projectRes) {
+                    if (projectErr?.message?.includes('row-level') || projectErr?.code === '42501') {
+                      toast({ title: 'Save Blocked (RLS)', description: 'Row Level Security prevents creating project. Sign in or update table policies.', variant: 'destructive' });
+                    } else {
+                      toast({ title: 'Save Failed', description: 'Could not create project', variant: 'destructive' });
+                    }
+                    console.warn('createProject failed', projectErr);
+                    return;
+                  }
+
+                  // persist into session storage and navigate
+                  const newMappingData = { ...(parsed || {}), projectId: projectRes.id, sourceColumns, targetColumns, rows: uploadedData?.rows, fileName: uploadedData?.fileName };
+                  sessionStorage.setItem('mappingData', JSON.stringify(newMappingData));
+
+                  // Also merge mapping changes into previewData so Preview reflects the latest mappings
+                  try {
+                    const previewRaw = sessionStorage.getItem('previewData');
+                    const previewBase = previewRaw ? JSON.parse(previewRaw) : {};
+                    const mergedPreview = { ...previewBase, fileName: uploadedData?.fileName, sourceColumns, targetColumns, rows: uploadedData?.rows };
+                    sessionStorage.setItem('previewData', JSON.stringify(mergedPreview));
+                  } catch (e) {
+                    // ignore preview merge errors
+                    console.warn('previewData merge failed', e);
+                  }
+
+                  toast({ title: 'Project Saved', description: `Project created: ${projectRes.name}` });
+                  navigate(`/mapping/${projectRes.id}`, { state: newMappingData });
+                } catch (err) {
+                  console.error('save project error', err);
+                  toast({ title: 'Save Failed', description: 'Unexpected error', variant: 'destructive' });
+                }
+              }}
+            >
+              Save Project
+            </Button>
+
            <Button asChild>
   <Link 
     to={`/preview/${projectId}`}
@@ -263,16 +437,18 @@ export default function Mapping() {
       fileName: uploadedData?.fileName,
       sourceColumns: sourceColumns,
       targetColumns: targetColumns,
-      rowCount: uploadedData?.rowCount
+      rowCount: uploadedData?.rowCount,
+      rows: uploadedData?.rows
     }}
     onClick={() => {
-      // Also store in sessionStorage as backup
+      // Also store in sessionStorage as backup, including full rows if present
       sessionStorage.setItem('previewData', JSON.stringify({
         projectName: uploadedData?.projectName,
         fileName: uploadedData?.fileName,
         sourceColumns: sourceColumns,
         targetColumns: targetColumns,
-        rowCount: uploadedData?.rowCount
+        rowCount: uploadedData?.rowCount,
+        rows: uploadedData?.rows
       }));
     }}
   >
@@ -342,6 +518,7 @@ export default function Mapping() {
             <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
               {targetColumns.map((column) => (
                 <div
+                  id={`target-${column.id}`}
                   key={column.id}
                   onDragOver={(e) => handleDragOver(e, column.id)}
                   onDrop={(e) => handleDrop(e, column.id)}
@@ -375,7 +552,12 @@ export default function Mapping() {
           <CardContent className="pt-0">
             <MappingPreviewTable
               columns={targetColumns.map((t) => ({ id: t.id, name: t.name }))}
-              rows={previewRows}
+              rows={
+                // Use sample rows from uploaded file if available, otherwise fallback to built rows
+                uploadedData?.samples && uploadedData.samples.length > 0
+                  ? buildPreviewRows(sourceColumns, targetColumns, uploadedData.samples.length)
+                  : buildPreviewRows(sourceColumns, targetColumns, 3)
+              }
               highlightColumn={selectedSource ? undefined : undefined}
             />
           </CardContent>

@@ -1,4 +1,4 @@
-import { Outlet, Link, useLocation } from "react-router-dom";
+import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { FileSpreadsheet, Menu, LogOut } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -10,6 +10,7 @@ import { DesktopSidebar } from "./DesktopSidebar";
 
 export default function AppLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { user, signOut } = useAuth();
   const { toast } = useToast();
@@ -89,9 +90,8 @@ export default function AppLayout() {
                   if (error) {
                     toast({ title: 'Sign out failed', description: error.message || String(error) });
                   } else {
-                    toast({ title: 'Signed out' });
-                    // redirect to landing
-                    window.location.href = '/';
+                    // navigate to login; Login page will show signed-out toast and reset the form
+                    navigate('/login', { replace: true, state: { loggedOut: true } });
                   }
                 }}
               >

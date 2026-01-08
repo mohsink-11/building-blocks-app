@@ -7,10 +7,18 @@ export interface UploadedFileData {
   id: string;
   name: string;
   size: number;
-  status: "uploading" | "validating" | "ready" | "error" | "processing" | "processed";
+  // added 'uploaded' status to indicate file is present but headers not yet read
+  status: "uploading" | "validating" | "uploaded" | "ready" | "error" | "processing" | "processed";
   progress: number;
   error?: string;
+  // store original file object so headers can be read later on user action
+  fileObj?: File;
+  // sample rows following header rows (array of rows -> array of cell strings)
+  samples?: string[][];
+  // all parsed data rows (after header rows) used for full preview/export
+  dataRows?: string[][];
   columns?: string[];
+  headerRows?: string[][];
   rowCount?: number;
   suggestions?: Array<{ 
   id?: string; 
@@ -43,6 +51,8 @@ export function FilePreviewCard({ file, onRemove }: FilePreviewCardProps) {
       case "uploading":
       case "validating":
         return <Loader2 className="h-6 w-6 animate-spin" />;
+      case "uploaded":
+        return <FileSpreadsheet className="h-6 w-6" />;
       default:
         return <FileSpreadsheet className="h-6 w-6" />;
     }
@@ -54,6 +64,8 @@ export function FilePreviewCard({ file, onRemove }: FilePreviewCardProps) {
         return "bg-destructive/10 text-destructive";
       case "ready":
         return "bg-accent/10 text-accent";
+      case "uploaded":
+        return "bg-primary/10 text-primary";
       default:
         return "bg-primary/10 text-primary";
     }
@@ -65,6 +77,8 @@ export function FilePreviewCard({ file, onRemove }: FilePreviewCardProps) {
         return `Uploading... ${file.progress}%`;
       case "validating":
         return "Validating structure...";
+      case "uploaded":
+        return "Uploaded — enter header rows then click Continue to read headers";
       case "ready":
         return file.columns
           ? `${file.columns.length} columns • ${file.rowCount?.toLocaleString() || 0} rows`
@@ -147,6 +161,19 @@ export function FilePreviewCard({ file, onRemove }: FilePreviewCardProps) {
                   </span>
                 )}
               </div>
+
+              {file.headerRows && file.headerRows.length > 0 && (
+                <div className="mt-3">
+                  <h4 className="text-sm font-medium">Detected header rows</h4>
+                  <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                    {file.headerRows.map((row, rIdx) => (
+                      <div key={rIdx} className="truncate">
+                        <strong>Row {rIdx + 1}:</strong> {row.map((c) => (String(c).trim() === '' ? '—' : String(c))).join(' | ')}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {file.suggestions && file.suggestions.length > 0 && (
   <div className="mt-3">

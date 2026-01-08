@@ -24,11 +24,18 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { User, Bell, Download, Trash2, LogOut } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Settings() {
   const [notifications, setNotifications] = useState(true);
   const [autoSave, setAutoSave] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
+  const { user, signOut } = useAuth();
+  const { toast } = useToast();
+  const navigate = useNavigate();
+  const [signingOut, setSigningOut] = useState(false);
 
   return (
     <div className="flex-1 p-4 pt-6 md:p-8">
@@ -200,9 +207,23 @@ export default function Settings() {
                   Sign out of your account
                 </p>
               </div>
-              <Button variant="outline">
+              <Button
+                variant="outline"
+                disabled={!user || signingOut}
+                onClick={async () => {
+                  setSigningOut(true);
+                  const { error } = await signOut();
+                  setSigningOut(false);
+                  if (error) {
+                    toast({ title: 'Sign out failed', description: error.message || String(error) });
+                  } else {
+                    // navigate to login; Login page will show signed-out toast and reset the form
+                    navigate('/login', { replace: true, state: { loggedOut: true } });
+                  }
+                }}
+              >
                 <LogOut className="mr-2 h-4 w-4" />
-                Log Out
+                {signingOut ? 'Signing out...' : 'Log Out'}
               </Button>
             </div>
             <Separator />

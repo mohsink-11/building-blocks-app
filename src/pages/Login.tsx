@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -32,6 +32,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { signIn, signInWithProvider } = useAuth();
   const { toast } = useToast();
 
@@ -43,6 +44,54 @@ export default function Login() {
       rememberMe: false,
     },
   });
+
+  // key used to remount the form to mitigate browser autofill after sign-out
+  const [formKey, setFormKey] = useState(0);
+
+  // If we were navigated to the login page as part of a sign-out, show a toast and clear the form
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(location.search);
+      if (location?.state?.loggedOut || params.get('logged_out') === '1') {
+        toast({ title: 'Signed out' });
+        // reset react-hook-form state
+        form.reset();
+        // increment key to remount form DOM and help prevent browser autofill
+        setFormKey((k) => k + 1);
+
+        // Some browsers will refill inputs from saved credentials; repeatedly clear values to counter late autofill
+        const clearInputs = () => {
+          try {
+            form.setValue('email', '');
+            form.setValue('password', '');
+            const els = document.querySelectorAll<HTMLInputElement>('input[name="email"], input[name="password"]');
+            els.forEach((el) => {
+              el.value = '';
+              // temporarily disable autocomplete on the input itself
+              try { el.setAttribute('autocomplete', 'off'); } catch (e) { /* ignore */ }
+              el.blur();
+            });
+          } catch (e) {
+            // ignore
+          }
+        };
+
+        // Run immediately then a few times in short intervals to catch late autofill from browsers/password managers
+        clearInputs();
+        let attempts = 0;
+        const interval = setInterval(() => {
+          attempts += 1;
+          clearInputs();
+          if (attempts > 10) clearInterval(interval);
+        }, 150);
+
+        // clear navigation state so this doesn't re-trigger
+        navigate(location.pathname, { replace: true, state: {} });
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [location, navigate, toast, form]);
 
   const onSubmit = async (data: LoginForm) => {
     setIsLoading(true);
@@ -126,8 +175,11 @@ export default function Login() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <Form {...form} key={formKey}>
+              <form autoComplete="off" onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                {/* Hidden dummy fields help absorb browser autofill so visible fields stay empty after logout */}
+                <input key={`dummy-username-${formKey}`} name="fake-username" autoComplete="username" tabIndex={-1} style={{ position: 'absolute', opacity: 0, height: 0, width: 0, pointerEvents: 'none' }} />
+                <input key={`dummy-password-${formKey}`} name="fake-password" type="password" autoComplete="current-password" tabIndex={-1} style={{ position: 'absolute', opacity: 0, height: 0, width: 0, pointerEvents: 'none' }} />
                 <FormField
                   control={form.control}
                   name="email"
@@ -141,6 +193,7 @@ export default function Login() {
                             type="email"
                             placeholder="name@example.com"
                             className="pl-10"
+                            autoComplete="username"
                             {...field}
                           />
                         </div>
@@ -171,6 +224,7 @@ export default function Login() {
                             type={showPassword ? "text" : "password"}
                             placeholder="Enter your password"
                             className="pl-10 pr-10"
+                            autoComplete="current-password"
                             {...field}
                           />
                           <button

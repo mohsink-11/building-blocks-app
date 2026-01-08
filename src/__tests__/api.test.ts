@@ -23,4 +23,13 @@ describe('supabase api helpers', () => {
     expect(error).toBeNull();
     mock.mockRestore();
   });
+
+  it('updateProject calls supabase.update', async () => {
+    const mock = vi.spyOn(supabase, 'from').mockReturnValue({ update: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: { id: 'p1', name: 'Updated' }, error: null }) } as any);
+    const { data, error } = await api.updateProject('p1', { name: 'Updated' });
+    expect(data).toBeDefined();
+    expect(data?.id).toBe('p1');
+    expect(error).toBeNull();
+    mock.mockRestore();
+  });
 });

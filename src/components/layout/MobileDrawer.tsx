@@ -1,4 +1,7 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 import {
   FileSpreadsheet,
   FileText,
@@ -24,6 +27,10 @@ const navItems = [
 
 export function MobileDrawer({ open, onOpenChange }: MobileDrawerProps) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
+  const { toast } = useToast();
+  const [signingOut, setSigningOut] = useState(false);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -99,14 +106,23 @@ export function MobileDrawer({ open, onOpenChange }: MobileDrawerProps) {
         {/* Logout Button */}
         <div className="p-4">
           <button
-            onClick={() => {
-              // TODO: Implement logout
+            disabled={!user || signingOut}
+            onClick={async () => {
+              setSigningOut(true);
+              const { error } = await signOut();
+              setSigningOut(false);
               onOpenChange(false);
+              if (error) {
+                toast({ title: 'Sign out failed', description: error.message || String(error) });
+              } else {
+                // navigate to login; Login page will show signed-out toast and reset the form
+                navigate('/login', { replace: true, state: { loggedOut: true } });
+              }
             }}
             className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-destructive transition-all hover:bg-destructive/10 active:scale-[0.98]"
           >
             <LogOut className="h-5 w-5" />
-            <span className="font-medium text-sm">Log Out</span>
+            <span className="font-medium text-sm">{signingOut ? 'Signing out...' : 'Log Out'}</span>
           </button>
         </div>
       </SheetContent>

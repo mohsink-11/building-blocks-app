@@ -4,6 +4,8 @@ export interface ProjectInsert {
   name: string;
   description?: string;
   settings?: Record<string, unknown>;
+  // Optional owner id to satisfy RLS policies that require auth.uid() = owner
+  owner?: string;
 }
 
 export interface TemplateInsert {
@@ -44,6 +46,11 @@ export async function createBatchJob(args: Record<string, unknown>) {
 export async function getBatchJob(id: string) {
   const { data, error } = await sb.from('batch_jobs').select('*').eq('id', id).single();
   return { data, error };
+}
+
+export async function updateProject(id: string, data: Partial<ProjectInsert>) {
+  const { data: res, error } = await sb.from('projects').update([{ ...data }]).eq('id', id).select('*').single();
+  return { data: res, error };
 }
 
 export async function processBatchJob(jobId: string) {

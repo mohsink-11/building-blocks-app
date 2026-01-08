@@ -1,4 +1,6 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
 import {
   FileSpreadsheet,
   Home,
@@ -39,9 +41,12 @@ const bottomNavItems = [
 
 export function DesktopSidebar({ collapsed, onToggle }: DesktopSidebarProps) {
   const location = useLocation();
+  const navigate = useNavigate();
 
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const { profile, loading } = useProfile();
+  const { toast } = useToast();
+  const [signingOut, setSigningOut] = useState(false);
 
   const NavItem = ({ icon: Icon, label, path }: { icon: typeof Home; label: string; path: string }) => {
     const isActive = path === "/dashboard"
@@ -178,7 +183,23 @@ export function DesktopSidebar({ collapsed, onToggle }: DesktopSidebarProps) {
                   {user?.email}
                 </p>
               </div>
-              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0"
+                disabled={!user || signingOut}
+                onClick={async () => {
+                  setSigningOut(true);
+                  const { error } = await signOut();
+                  setSigningOut(false);
+                  if (error) {
+                    toast({ title: 'Sign out failed', description: error.message || String(error) });
+                  } else {
+                    // navigate to login; Login page will show signed-out toast and reset the form
+                    navigate('/login', { replace: true, state: { loggedOut: true } });
+                  }
+                }}
+              >
                 <LogOut className="h-4 w-4" />
               </Button>
             </div>

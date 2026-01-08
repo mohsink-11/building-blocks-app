@@ -14,6 +14,12 @@ export interface ColumnDef {
   id: string;
   name: string;
   width?: string;
+  // UI hints
+  isPivot?: boolean;
+  isMapped?: boolean;
+  isGroup?: boolean;
+  // assigned base groups (e.g. ['Assembly','Equipment'])
+  groups?: string[];
 }
 
 interface DataPreviewTableProps {
@@ -66,7 +72,25 @@ export function DataPreviewTable({
                 className="px-4 py-3 text-left font-medium whitespace-nowrap"
                 style={{ width: col.width }}
               >
-                {col.name}
+                <div className="flex items-center gap-2">
+                  <div>{col.name}</div>
+                  {col.isGroup && (
+                    <Badge variant="outline" className="text-[10px] py-1">Group</Badge>
+                  )}
+                  {col.isPivot && (
+                    <Badge variant="secondary" className="text-[10px] py-1">Pivot</Badge>
+                  )}
+                  {col.isMapped && (
+                    <Badge variant="default" className="text-[10px] py-1">Mapped</Badge>
+                  )}
+                  {col.groups && col.groups.length > 0 && (
+                    <div className="flex gap-1">
+                      {col.groups.map(g => (
+                        <Badge key={g} variant="outline" className="text-[10px] py-1">{g}</Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </th>
             ))}
           </tr>
