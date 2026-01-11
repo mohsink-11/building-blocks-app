@@ -9,6 +9,7 @@ import { FileDropZone } from "@/components/upload/FileDropZone";
 import { FilePreviewCard, UploadedFileData } from "@/components/upload/FilePreviewCard";
 import { useToast } from "@/hooks/use-toast";
 import { createBatchJob, processBatchJob, getMappingSuggestions, createProject } from "@/integrations/supabase/api";
+import { addProjectFile } from "@/integrations/supabase/api";
 import { useAuth } from '@/hooks/useAuth';
 import { deriveLeafHeaders, detectHeaderRows } from "../lib/headers";
 
@@ -351,7 +352,7 @@ export default function Upload() {
               headerRows: headerRowsUsed,
               samples: sampleRows,
               dataRows: allRows && allRows.length > headerCount ? allRows.slice(headerCount).map(r => r.map((c) => (c == null ? '' : String(c)))) : undefined,
-              rowCount: Math.floor(Math.random() * 2000) + 50,
+              rowCount: allRows && allRows.length > headerCount ? allRows.slice(headerCount).length : 0,
             }
           : f
       )
@@ -526,6 +527,13 @@ export default function Upload() {
                         }
                       } else {
                         mappingState.projectId = projectRes.id;
+                        // Insert file record for this upload
+                        await addProjectFile({
+                          project_id: projectRes.id,
+                          name: readyFile.name,
+                          rows: readyFile.rowCount,
+                          processed_at: new Date().toISOString(),
+                        });
                       }
                     }
                   }

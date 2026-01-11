@@ -18,34 +18,47 @@ import {
   Pencil,
 } from "lucide-react";
 
-// Placeholder data
-const project = {
-  id: "1",
-  name: "Q4 BOM Transform",
-  createdAt: "Dec 15, 2024",
-  lastEdited: "2 hours ago",
-  status: "completed",
-  description: "Quarterly BOM data transformation for inventory system",
-  files: [
-    { id: "f1", name: "BOM_Q4_2024.xlsx", processedAt: "Dec 20, 2024", status: "completed", rows: 523 },
-    { id: "f2", name: "BOM_Updates.xlsx", processedAt: "Dec 18, 2024", status: "completed", rows: 128 },
-    { id: "f3", name: "Parts_List.xlsx", processedAt: "Dec 15, 2024", status: "completed", rows: 596 },
-  ],
-  exports: [
-    { id: "e1", name: "Transformed_BOM_Q4.xlsx", createdAt: "Dec 20, 2024", size: "2.4 MB" },
-    { id: "e2", name: "Transformed_Updates.xlsx", createdAt: "Dec 18, 2024", size: "856 KB" },
-  ],
-  stats: {
-    columnsMapped: 12,
-    rulesApplied: 5,
-    rowsProcessed: 1247,
-    errorsFixed: 23,
-  },
-};
+import { useEffect, useState } from "react";
+import { getProjectDetail } from "@/integrations/supabase/api";
+
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
+  const [project, setProject] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    async function fetchProject() {
+      setLoading(true);
+      const { data, error } = await getProjectDetail(id);
+      if (error) {
+        // eslint-disable-next-line no-console
+        console.error("Failed to fetch project detail:", error);
+        setProject(null);
+      } else {
+        setProject(data);
+      }
+      setLoading(false);
+    }
+    if (id) fetchProject();
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="flex-1 p-4 pt-6 md:p-8 flex items-center justify-center">
+        <span className="text-muted-foreground">Loading project...</span>
+      </div>
+    );
+  }
+  if (!project) {
+    return (
+      <div className="flex-1 p-4 pt-6 md:p-8 flex items-center justify-center">
+        <span className="text-destructive">Project not found.</span>
+      </div>
+    );
+  }
+
+  // ...existing JSX, replace all 'project.' references with the fetched project object...
   return (
     <div className="flex-1 p-4 pt-6 md:p-8">
       {/* Header */}
@@ -112,25 +125,25 @@ export default function ProjectDetail() {
       <div className="mb-6 grid gap-4 grid-cols-2 lg:grid-cols-4">
         <Card className="bg-primary/5 border-primary/10">
           <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold text-primary">{project.stats.columnsMapped}</p>
+            <p className="text-2xl font-bold text-primary">{project.stats?.columnsMapped ?? '-'}</p>
             <p className="text-sm text-muted-foreground">Columns Mapped</p>
           </CardContent>
         </Card>
         <Card className="bg-secondary/50 border-secondary">
           <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold">{project.stats.rulesApplied}</p>
+            <p className="text-2xl font-bold">{project.stats?.rulesApplied ?? '-'}</p>
             <p className="text-sm text-muted-foreground">Rules Applied</p>
           </CardContent>
         </Card>
         <Card className="bg-accent/5 border-accent/10">
           <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold text-accent">{project.stats.rowsProcessed.toLocaleString()}</p>
+            <p className="text-2xl font-bold text-accent">{project.stats?.rowsProcessed ? project.stats.rowsProcessed.toLocaleString() : '-'}</p>
             <p className="text-sm text-muted-foreground">Rows Processed</p>
           </CardContent>
         </Card>
         <Card className="bg-warning/5 border-warning/10">
           <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold text-warning">{project.stats.errorsFixed}</p>
+            <p className="text-2xl font-bold text-warning">{project.stats?.errorsFixed ?? '-'}</p>
             <p className="text-sm text-muted-foreground">Errors Fixed</p>
           </CardContent>
         </Card>
@@ -160,26 +173,30 @@ export default function ProjectDetail() {
             </CardHeader>
             <CardContent className="pt-0">
               <div className="space-y-3">
-                {project.files.map((file) => (
-                  <div
-                    key={file.id}
-                    className="flex items-center gap-4 rounded-lg border border-border bg-card p-4 transition-colors hover:bg-muted/30"
-                  >
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                      <FileSpreadsheet className="h-5 w-5" />
+                {(project.files && project.files.length > 0) ? (
+                  project.files.map((file: any) => (
+                    <div
+                      key={file.id}
+                      className="flex items-center gap-4 rounded-lg border border-border bg-card p-4 transition-colors hover:bg-muted/30"
+                    >
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <FileSpreadsheet className="h-5 w-5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{file.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {file.rows?.toLocaleString() ?? '-'} rows • Processed {file.processed_at ? new Date(file.processed_at).toLocaleString() : '-'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 text-accent">
+                        <CheckCircle className="h-4 w-4" />
+                        <span className="text-sm hidden sm:inline">Completed</span>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{file.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {file.rows.toLocaleString()} rows • Processed {file.processedAt}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 text-accent">
-                      <CheckCircle className="h-4 w-4" />
-                      <span className="text-sm hidden sm:inline">Completed</span>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <p className="text-muted-foreground">No source files.</p>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -192,26 +209,30 @@ export default function ProjectDetail() {
             </CardHeader>
             <CardContent className="pt-0">
               <div className="space-y-3">
-                {project.exports.map((exportItem) => (
-                  <div
-                    key={exportItem.id}
-                    className="flex items-center gap-4 rounded-lg border border-border bg-card p-4"
-                  >
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
-                      <Download className="h-5 w-5" />
+                {(project.exports && project.exports.length > 0) ? (
+                  project.exports.map((exportItem: any) => (
+                    <div
+                      key={exportItem.id}
+                      className="flex items-center gap-4 rounded-lg border border-border bg-card p-4"
+                    >
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
+                        <Download className="h-5 w-5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{exportItem.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {exportItem.size ?? '-'} • {exportItem.created_at ? new Date(exportItem.created_at).toLocaleString() : '-'}
+                        </p>
+                      </div>
+                      <Button variant="outline" size="sm">
+                        <Download className="mr-2 h-4 w-4" />
+                        <span className="hidden sm:inline">Download</span>
+                      </Button>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{exportItem.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {exportItem.size} • {exportItem.createdAt}
-                      </p>
-                    </div>
-                    <Button variant="outline" size="sm">
-                      <Download className="mr-2 h-4 w-4" />
-                      <span className="hidden sm:inline">Download</span>
-                    </Button>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <p className="text-muted-foreground">No exports.</p>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -224,33 +245,41 @@ export default function ProjectDetail() {
             </CardHeader>
             <CardContent className="pt-0">
               <div className="space-y-4">
-                <div className="flex gap-4">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
-                    <CheckCircle className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="font-medium">Transformation completed</p>
-                    <p className="text-sm text-muted-foreground">2 hours ago</p>
-                  </div>
-                </div>
-                <div className="flex gap-4">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                    <Settings2 className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="font-medium">Rules updated</p>
-                    <p className="text-sm text-muted-foreground">3 hours ago</p>
-                  </div>
-                </div>
-                <div className="flex gap-4">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-warning/10 text-warning">
-                    <AlertCircle className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="font-medium">23 validation errors fixed</p>
-                    <p className="text-sm text-muted-foreground">Yesterday</p>
-                  </div>
-                </div>
+                {(project.activity && project.activity.length > 0) ? (
+                  project.activity.map((act: any) => {
+                    let icon, iconClass;
+                    switch (act.type) {
+                      case 'transformation':
+                        icon = <CheckCircle className="h-4 w-4" />;
+                        iconClass = "bg-accent/10 text-accent";
+                        break;
+                      case 'rules_update':
+                        icon = <Settings2 className="h-4 w-4" />;
+                        iconClass = "bg-primary/10 text-primary";
+                        break;
+                      case 'validation':
+                        icon = <AlertCircle className="h-4 w-4" />;
+                        iconClass = "bg-warning/10 text-warning";
+                        break;
+                      default:
+                        icon = <BarChart3 className="h-4 w-4" />;
+                        iconClass = "bg-muted/10 text-muted-foreground";
+                    }
+                    return (
+                      <div className="flex gap-4" key={act.id}>
+                        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${iconClass}`}>
+                          {icon}
+                        </div>
+                        <div>
+                          <p className="font-medium">{act.description ?? act.type}</p>
+                          <p className="text-sm text-muted-foreground">{act.created_at ? new Date(act.created_at).toLocaleString() : '-'}</p>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-muted-foreground">No recent activity.</p>
+                )}
               </div>
             </CardContent>
           </Card>

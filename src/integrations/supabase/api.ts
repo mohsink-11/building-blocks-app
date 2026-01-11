@@ -1,3 +1,29 @@
+// Insert a new file record for a project
+export async function addProjectFile({ project_id, name, rows, processed_at }: { project_id: string, name: string, rows?: number, processed_at?: string }) {
+  const sb = supabase as any;
+  const { data, error } = await sb.from('project_files').insert([
+    { project_id, name, rows, processed_at }
+  ]).select('*').single();
+  return { data, error };
+}
+
+// Insert a new export record for a project
+export async function addProjectExport({ project_id, name, size, created_at }: { project_id: string, name: string, size?: string, created_at?: string }) {
+  const sb = supabase as any;
+  const { data, error } = await sb.from('project_exports').insert([
+    { project_id, name, size, created_at }
+  ]).select('*').single();
+  return { data, error };
+}
+
+// Insert a new activity record for a project
+export async function addProjectActivity({ project_id, type, description, created_at }: { project_id: string, type: string, description?: string, created_at?: string }) {
+  const sb = supabase as any;
+  const { data, error } = await sb.from('project_activity').insert([
+    { project_id, type, description, created_at }
+  ]).select('*').single();
+  return { data, error };
+}
 import { supabase } from './client';
 
 export interface ProjectInsert {
@@ -84,4 +110,52 @@ export async function getMappingSuggestions(columns: string[], project?: Record<
   } catch (error) {
     return { data: null, error };
   }
+}
+
+export async function deleteProject(id: string) {
+  const { error } = await supabase.from('projects').delete().eq('id', id);
+  return { error };
+}
+
+export async function getProjectDetail(id: string) {
+  const sb = supabase as any;
+  // Fetch project
+  const { data: project, error: projectError } = await sb
+    .from('projects')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  // Fetch related files
+  const { data: files, error: filesError } = await sb
+    .from('project_files')
+    .select('*')
+    .eq('project_id', id);
+
+  // Fetch related exports
+  const { data: exports, error: exportsError } = await sb
+    .from('project_exports')
+    .select('*')
+    .eq('project_id', id);
+
+  // Fetch related activity
+  const { data: activity, error: activityError } = await sb
+    .from('project_activity')
+    .select('*')
+    .eq('project_id', id)
+    .order('created_at', { ascending: false });
+
+  // Combine errors if any
+  const error = projectError || filesError || exportsError || activityError;
+
+  // Return combined data
+  return {
+    data: {
+      ...project,
+      files: files ?? [],
+      exports: exports ?? [],
+      activity: activity ?? [],
+    },
+    error,
+  };
 }

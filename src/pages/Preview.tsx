@@ -25,6 +25,7 @@ import { PreviewStats } from "@/components/preview/PreviewStats";
 import { DataPreviewTable, ColumnDef, DataRow } from "@/components/preview/DataPreviewTable";
 import { ComparisonView } from "@/components/preview/ComparisonView";
 import { useToast } from "@/hooks/use-toast";
+import { addProjectExport, addProjectActivity } from "@/integrations/supabase/api";
 import { pivotByGroup, PivotMethod } from '@/lib/rowTransforms';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -176,6 +177,24 @@ export default function Preview() {
       // ignore
     }
   }, []);
+
+  // Load persisted assignment fields from previewData (so UI reflects saved assignments on mount or navigation)
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem('previewData');
+      if (!stored) return;
+      const parsed = JSON.parse(stored);
+      if (parsed?.columnGroups) setColumnGroups(parsed.columnGroups);
+      if (parsed?.mappedSources) setMappedSources(parsed.mappedSources);
+      if (parsed?.columnPreferredBase) setColumnPreferredBase(parsed.columnPreferredBase);
+      if (parsed?.columnMethods) setColumnMethods(parsed.columnMethods);
+      if (parsed?.columnBaseColumn) setColumnBaseColumn(parsed.columnBaseColumn);
+      if (parsed?.columnParentLabel) setColumnParentLabel(parsed.columnParentLabel);
+    } catch (err) {
+      // ignore
+    }
+  // Re-run when project changes or when navigation key changes (so returning to preview reloads assignments)
+  }, [projectId, location.key]);
 
   // Convert source columns to before columns format
   // Show only the columns that have been mapped in Mapping (previewData.targetColumns) plus the group column for segmentation
@@ -726,6 +745,21 @@ export default function Preview() {
           title: "Export Successful",
           description: `Data exported as ${filename}`,
         });
+        // Save export record and activity if projectId exists
+        if (projectId) {
+          await addProjectExport({
+            project_id: projectId,
+            name: filename,
+            size: transformResult.rows.length ? `${transformResult.rows.length} rows` : undefined,
+            created_at: new Date().toISOString(),
+          });
+          await addProjectActivity({
+            project_id: projectId,
+            type: 'export',
+            description: `Exported as ${filename}`,
+            created_at: new Date().toISOString(),
+          });
+        }
       } else {
         toast({
           title: "Export Failed",

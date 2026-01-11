@@ -14,30 +14,44 @@ import { ProjectCard, type Project } from "@/components/dashboard/ProjectCard";
 import { QuickUploadFAB } from "@/components/dashboard/QuickUploadFAB";
 import { cn } from "@/lib/utils";
 
-// Placeholder data
-const projects: Project[] = [
-  { id: "1", name: "Q4 BOM Transform", lastEdited: "2 hours ago", status: "completed", filesCount: 3 },
-  { id: "2", name: "Inventory Mapping", lastEdited: "Yesterday", status: "in_progress", filesCount: 1 },
-  { id: "3", name: "Parts List Conversion", lastEdited: "3 days ago", status: "completed", filesCount: 5 },
-  { id: "4", name: "Supplier Data Transform", lastEdited: "1 week ago", status: "completed", filesCount: 2 },
-  { id: "5", name: "Asset Registry Update", lastEdited: "2 weeks ago", status: "completed", filesCount: 1 },
-];
+
+import { useEffect } from "react";
+import { listProjects, deleteProject } from "@/integrations/supabase/api";
+
 
 export default function Projects() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("recent");
   const [filterStatus, setFilterStatus] = useState("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchProjects() {
+      setLoading(true);
+      const { data, error } = await listProjects();
+      if (error) {
+        // eslint-disable-next-line no-console
+        console.error("Failed to fetch projects:", error);
+        setProjects([]);
+      } else {
+        setProjects(Array.isArray(data) ? data : []);
+      }
+      setLoading(false);
+    }
+    fetchProjects();
+  }, []);
 
   const filteredProjects = projects
     .filter((project) => {
-      const matchesSearch = project.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = project.name?.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesStatus = filterStatus === "all" || project.status === filterStatus;
       return matchesSearch && matchesStatus;
     })
     .sort((a, b) => {
-      if (sortBy === "name") return a.name.localeCompare(b.name);
-      return 0; // Default: recent (already sorted)
+      if (sortBy === "name") return a.name?.localeCompare(b.name ?? "");
+      return 0; // Default: recent (already sorted by API)
     });
 
   const handleRename = (id: string) => {
@@ -48,8 +62,22 @@ export default function Projects() {
     console.log("Duplicate project:", id);
   };
 
-  const handleDelete = (id: string) => {
-    console.log("Delete project:", id);
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this project? This action cannot be undone.")) return;
+    try {
+      const { error } = await deleteProject(id);
+      if (error) {
+        // eslint-disable-next-line no-console
+        console.error("Failed to delete project:", error);
+        alert("Failed to delete project.");
+      } else {
+        setProjects((prev) => prev.filter((p) => p.id !== id));
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Delete error:", err);
+      alert("Failed to delete project.");
+    }
   };
 
   return (
@@ -123,7 +151,11 @@ export default function Projects() {
       </div>
 
       {/* Projects */}
-      {filteredProjects.length > 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-center">
+          <span className="text-muted-foreground">Loading projects...</span>
+        </div>
+      ) : filteredProjects.length > 0 ? (
         <div
           className={cn(
             "grid gap-4",

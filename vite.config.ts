@@ -18,7 +18,18 @@ export default defineConfig(({ mode }) => ({
       devOptions: { enabled: mode === "development" },
       workbox: {
         navigateFallback: '/offline.html',
-        navigateFallbackDenylist: [/^\/api\//]
+        navigateFallbackDenylist: [/^\/api\//],
+        // Runtime route for Supabase - keep API/auth calls network-only
+        runtimeCaching: [
+          {
+            // Match this project's Supabase domain; change to a more general regex if multiple projects are used
+            urlPattern: /^https:\/\/sqevpljhffbpqpdhxxgp\.supabase\.co\/.*$/,
+            handler: 'NetworkOnly',
+            options: {
+              cacheName: 'supabase-api',
+            },
+          },
+        ],
       },
       manifest: {
         name: "Building Blocks",

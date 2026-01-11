@@ -14,21 +14,50 @@ import { StatCard } from "@/components/dashboard/StatCard";
 import { ProjectCard, type Project } from "@/components/dashboard/ProjectCard";
 import { QuickUploadFAB } from "@/components/dashboard/QuickUploadFAB";
 import { useProfile } from "@/hooks/useProfile";
-// Placeholder data - will be replaced with real data from Supabase
-const recentProjects: Project[] = [
-  { id: "1", name: "Q4 BOM Transform", lastEdited: "2 hours ago", status: "completed" },
-  { id: "2", name: "Inventory Mapping", lastEdited: "Yesterday", status: "in_progress" },
-  { id: "3", name: "Parts List Conversion", lastEdited: "3 days ago", status: "completed" },
-];
+import { useEffect, useState } from "react";
+import { listProjects } from "@/integrations/supabase/api";
 
-const stats = [
-  { label: "Total Projects", value: "12", icon: FolderOpen },
-  { label: "Files Processed", value: "47", icon: FileSpreadsheet },
-  { label: "Hours Saved", value: "23", icon: Clock, trend: { value: "12%", positive: true } },
-  { label: "Success Rate", value: "98%", icon: TrendingUp, trend: { value: "3%", positive: true } },
-];
 
 export default function Dashboard() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<Array<{
+    label: string;
+    value: string;
+    icon: typeof FolderOpen;
+    trend?: { value: string; positive: boolean };
+  }>>([
+    { label: "Total Projects", value: "-", icon: FolderOpen },
+    { label: "Files Processed", value: "-", icon: FileSpreadsheet },
+    { label: "Hours Saved", value: "-", icon: Clock },
+    { label: "Success Rate", value: "-", icon: TrendingUp },
+  ]);
+
+  useEffect(() => {
+    async function fetchProjects() {
+      setLoading(true);
+      const { data, error } = await listProjects();
+      if (error) {
+        // eslint-disable-next-line no-console
+        console.error("Failed to fetch projects:", error);
+        setProjects([]);
+        setStats((prev) => prev.map((s) => s.label === "Total Projects" ? { ...s, value: "-" } : s));
+      } else {
+        setProjects(Array.isArray(data) ? data : []);
+        setStats((prev) => prev.map((s) =>
+          s.label === "Total Projects"
+            ? { ...s, value: String(data?.length ?? 0) }
+            : s
+        ));
+      }
+      setLoading(false);
+    }
+    fetchProjects();
+  }, []);
+
+  // Show up to 3 most recent projects
+  const recentProjects = projects.slice(0, 3);
+
   return (
     <div className="flex-1 space-y-6 p-4 pt-6 md:p-8">
       {/* Header */}
@@ -72,7 +101,11 @@ export default function Dashboard() {
           </Button>
         </CardHeader>
         <CardContent className="pt-0">
-          {recentProjects.length > 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center py-12 text-center">
+              <span className="text-muted-foreground">Loading projects...</span>
+            </div>
+          ) : recentProjects.length > 0 ? (
             <div className="space-y-3">
               {recentProjects.map((project) => (
                 <ProjectCard key={project.id} project={project} variant="list" />

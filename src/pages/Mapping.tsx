@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { Link, useParams, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { createProject, updateProject } from "@/integrations/supabase/api";
+import { createProject, updateProject, getProjectDetail } from "@/integrations/supabase/api";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, ArrowRight, Plus, Eye, EyeOff } from "lucide-react";
@@ -70,45 +70,62 @@ const buildPreviewRows = (srcCols: SourceColumn[], tgtCols: TargetColumn[], samp
   return rows;
 };
 
+function getUploadedData(location) {
+  // First try location state
+  if (location.state) {
+    return location.state as {
+      projectName?: string;
+      fileName?: string;
+      columns?: string[];
+      rowCount?: number;
+      suggestions?: Array<{ 
+        name?: string;
+        suggestedTransformation?: string;
+        justification?: string;
+      }>;
+      fileId?: string;
+    };
+  }
+  // Fallback to sessionStorage
+  const stored = sessionStorage.getItem('mappingData');
+  if (stored) {
+    try {
+      return JSON.parse(stored);
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
+}
+
 export default function Mapping() {
+  // All hooks must be called unconditionally and before any early return!
   const { projectId } = useParams<{ projectId: string }>();
   const location = useLocation();
-  
-  // Get data from navigation state or sessionStorage
-  const getUploadedData = () => {
-    // First try location state
-    if (location.state) {
-      return location.state as {
-        projectName?: string;
-        fileName?: string;
-        columns?: string[];
-        rowCount?: number;
-        suggestions?: Array<{ 
-          name?: string;
-          suggestedTransformation?: string;
-          justification?: string;
-        }>;
-        fileId?: string;
-      };
-    }
-    
-    // Fallback to sessionStorage
-    const stored = sessionStorage.getItem('mappingData');
-    if (stored) {
-      try {
-        return JSON.parse(stored);
-      } catch (e) {
-        return null;
-      }
-    }
-    
-    return null;
-  };
-
-  const uploadedData = getUploadedData();
+  const uploadedData = getUploadedData(location);
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user, session } = useAuth();
+  const [sourceColumns, setSourceColumns] = useState<SourceColumn[]>([]);
+  const [targetColumns, setTargetColumns] = useState<TargetColumn[]>([]);
+  const [suggestions, setSuggestions] = useState<AISuggestion[]>([]);
+  const [mappingLoaded, setMappingLoaded] = useState(false);
+  const [mappingError, setMappingError] = useState<string | null>(null);
+  const [selectedSource, setSelectedSource] = useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(true);
+
+  // Only render mapping UI after mappingLoaded
+  if (mappingError) {
+    return (
+      <div className="flex-1 p-4 pt-6 md:p-8 flex items-center justify-center">
+        <span className="text-destructive">{mappingError}</span>
+      </div>
+    );
+  }
+  if (!mappingLoaded) {
+    return <div className="flex-1 p-4 pt-6 md:p-8 flex items-center justify-center"><span className="text-muted-foreground">Loading mapping...</span></div>;
+  }
 
   // If navigation included a `selectedTargetId` or the URL has a hash, scroll to that target element
   useEffect(() => {
@@ -156,62 +173,85 @@ export default function Mapping() {
     return fallbackSourceColumns;
   };
 
-  // Convert AI suggestions to the format expected by AISuggestionsBar
-  const getInitialSuggestions = (): AISuggestion[] => {
-    if (uploadedData?.suggestions && uploadedData.suggestions.length > 0) {
-      return uploadedData.suggestions.map((sug, index) => ({
-        id: `sug${index + 1}`,
-        description: `${sug.name}: ${sug.suggestedTransformation} - ${sug.justification}`,
-        sourceColumns: [], // Map based on your suggestion structure
-        targetColumn: sug.name || "new",
-        applied: false,
-      }));
-    }
-    
-    // Fallback suggestions
-    return fallbackSuggestions;
-  };
-
-  const [sourceColumns, setSourceColumns] = useState<SourceColumn[]>(getInitialSourceColumns());
-  const [targetColumns, setTargetColumns] = useState<TargetColumn[]>(() => {
-    // Prefer targetColumns passed via state (Preview -> Mapping edit) or sessionStorage mappingData
-    try {
-      if (location.state && (location.state as any).targetColumns) {
-        return (location.state as any).targetColumns as TargetColumn[];
+  useEffect(() => {
+    async function loadMapping() {
+      setMappingError(null);
+      // If projectId is present, fetch mapping from DB
+      if (projectId) {
+        const { data, error } = await getProjectDetail(projectId);
+        if (error || !data) {
+          setMappingError(
+            (error && error.message) ||
+              "Failed to load project. You may not have access, or the project does not exist."
+          );
+          setMappingLoaded(false);
+          return;
+        }
+        if (!data?.settings?.mapping) {
+          setMappingError("No mapping found for this project.");
+          setMappingLoaded(false);
+          return;
+        }
+        setSourceColumns(data.settings.mapping.sourceColumns || fallbackSourceColumns);
+        setTargetColumns(data.settings.mapping.targetColumns || initialTargetColumns);
+        setSuggestions([]); // Optionally, load suggestions from DB if you store them
+        setMappingLoaded(true);
+        return;
       }
-      const stored = sessionStorage.getItem('mappingData');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed?.targetColumns) return parsed.targetColumns as TargetColumn[];
-      }
-    } catch (err) {
-      // ignore
+      // Otherwise, use uploaded/session/local data
+      const getInitialSourceColumns = (): SourceColumn[] => {
+        if (uploadedData?.sourceColumns && Array.isArray(uploadedData.sourceColumns) && uploadedData.sourceColumns.length > 0) {
+          return (uploadedData.sourceColumns as any[]).map((c, idx) => ({ id: c.id ?? `s${idx+1}`, name: c.name ?? `Column ${idx+1}`, type: c.type ?? 'string', sampleValues: c.sampleValues || [] }));
+        }
+        if (uploadedData?.columns && Array.isArray(uploadedData.columns) && uploadedData.columns.length > 0) {
+          const samples: string[][] | undefined = uploadedData?.samples ?? (uploadedData?.rows ? (uploadedData.rows as string[][]).slice(0, 5) : undefined);
+          return uploadedData.columns.map((col, index) => ({
+            id: `s${index + 1}`,
+            name: col,
+            type: "string",
+            sampleValues: samples && samples.length > 0 ? samples.map((r) => String(r[index] ?? "")) : []
+          }));
+        }
+        return fallbackSourceColumns;
+      };
+      const getInitialTargetColumns = (): TargetColumn[] => {
+        try {
+          if (location.state && (location.state as any).targetColumns) {
+            return (location.state as any).targetColumns as TargetColumn[];
+          }
+          const stored = sessionStorage.getItem('mappingData');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed?.targetColumns) return parsed.targetColumns as TargetColumn[];
+          }
+        } catch (err) {}
+        return initialTargetColumns;
+      };
+      const getInitialSuggestions = (): AISuggestion[] => {
+        if (uploadedData?.suggestions && uploadedData.suggestions.length > 0) {
+          return uploadedData.suggestions.map((sug, index) => ({
+            id: `sug${index + 1}`,
+            description: `${sug.name}: ${sug.suggestedTransformation} - ${sug.justification}`,
+            sourceColumns: [],
+            targetColumn: sug.name || "new",
+            applied: false,
+          }));
+        }
+        return fallbackSuggestions;
+      };
+      setSourceColumns(getInitialSourceColumns());
+      setTargetColumns(getInitialTargetColumns());
+      setSuggestions(getInitialSuggestions());
+      setMappingLoaded(true);
     }
-    return initialTargetColumns;
-  });
-  const [suggestions, setSuggestions] = useState<AISuggestion[]>(getInitialSuggestions());
-  const [selectedSource, setSelectedSource] = useState<string | null>(null);
-  const [showPreview, setShowPreview] = useState(true);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+    loadMapping();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
-  // Get mapped source IDs
-  const mappedSourceIds = new Set(targetColumns.flatMap((t) => t.mappedColumns));
-
-  // Get available source columns for a target
-  const getAvailableSourceColumns = (targetId: string) => {
-    const target = targetColumns.find((t) => t.id === targetId);
-    return sourceColumns.filter(
-      (s) => !target?.mappedColumns.includes(s.id)
-    );
-  };
-
-  const handleAddTargetColumn = () => {
-    const newId = `t${Date.now()}`;
-    setTargetColumns([
-      ...targetColumns,
-      { id: newId, name: "New Column", mappedColumns: [], delimiter: " - " },
-    ]);
-  };
+  // Only render mapping UI after mappingLoaded
+  if (!mappingLoaded) {
+    return <div className="flex-1 p-4 pt-6 md:p-8 flex items-center justify-center"><span className="text-muted-foreground">Loading mapping...</span></div>;
+  }
 
   const handleRemoveMapping = (targetId: string, sourceId: string) => {
     setTargetColumns(
@@ -291,6 +331,25 @@ export default function Mapping() {
     [selectedSource]
   );
 
+  // Get mapped source IDs
+  const mappedSourceIds = new Set(targetColumns.flatMap((t) => t.mappedColumns));
+
+  // Get available source columns for a target
+  const getAvailableSourceColumns = (targetId: string) => {
+    const target = targetColumns.find((t) => t.id === targetId);
+    return sourceColumns.filter(
+      (s) => !target?.mappedColumns.includes(s.id)
+    );
+  };
+
+  const handleAddTargetColumn = () => {
+    const newId = `t${Date.now()}`;
+    setTargetColumns([
+      ...targetColumns,
+      { id: newId, name: "New Column", mappedColumns: [], delimiter: " - " },
+    ]);
+  };
+
   return (
     <div className="flex-1 p-4 pt-6 md:p-8">
       {/* Header */}
@@ -344,9 +403,23 @@ export default function Mapping() {
                   // eslint-disable-next-line no-console
                   console.log('saveProject handler invoked', { pathParam, isExplicitNew, existingProjectId, userId: user?.id, hasSession: !!session, parsedHasProjectId: !!parsed?.projectId });
 
+
+                  // Compute stats for the project
+                  const stats = {
+                    columnsMapped: targetColumns.filter(t => t.mappedColumns && t.mappedColumns.length > 0).length,
+                    rulesApplied: 0, // You can update this if you have rules logic
+                    rowsProcessed: uploadedData?.rowCount || (uploadedData?.rows ? uploadedData.rows.length : 0) || 0,
+                    errorsFixed: 0 // You can update this if you have error tracking
+                  };
+
                   if (existingProjectId) {
                     // Update existing project
-                    const payload: any = { name: projectNameToUse, description: `Updated mapping for ${projectNameToUse}`, settings: { mapping: { sourceColumns, targetColumns } } };
+                    const payload: any = {
+                      name: projectNameToUse,
+                      description: `Updated mapping for ${projectNameToUse}`,
+                      settings: { mapping: { sourceColumns, targetColumns } },
+                      stats
+                    };
                     const { data: updRes, error: updErr } = await updateProject(existingProjectId, payload);
                     if (updErr || !updRes) {
                       if (updErr?.message?.includes('row-level') || updErr?.code === '42501') {
@@ -389,13 +462,19 @@ export default function Mapping() {
                   console.log('about to call createProject', { pathParam: projectId, locationPath: location.pathname, stateAny: stateAny?.projectId, userId: user?.id, hasSession: !!session });
 
                   // Include owner/created_by to satisfy common RLS policies that require auth.uid()
-                  const payload: any = { name: projectNameToUse, description: `Mapping for ${projectNameToUse}` };
+                  const payload: any = {
+                    name: projectNameToUse,
+                    description: `Mapping for ${projectNameToUse}`,
+                    stats
+                  };
                   if (user?.id) payload.owner = user.id;
 
                   const { data: projectRes, error: projectErr } = await createProject(payload);
                   if (projectErr || !projectRes) {
                     if (projectErr?.message?.includes('row-level') || projectErr?.code === '42501') {
                       toast({ title: 'Save Blocked (RLS)', description: 'Row Level Security prevents creating project. Sign in or update table policies.', variant: 'destructive' });
+                    } else if (!projectRes) {
+                      toast({ title: 'Save Failed', description: 'No project returned from server. You may not have access, or your session is invalid.', variant: 'destructive' });
                     } else {
                       toast({ title: 'Save Failed', description: 'Could not create project', variant: 'destructive' });
                     }
@@ -441,15 +520,32 @@ export default function Mapping() {
       rows: uploadedData?.rows
     }}
     onClick={() => {
-      // Also store in sessionStorage as backup, including full rows if present
-      sessionStorage.setItem('previewData', JSON.stringify({
-        projectName: uploadedData?.projectName,
-        fileName: uploadedData?.fileName,
-        sourceColumns: sourceColumns,
-        targetColumns: targetColumns,
-        rowCount: uploadedData?.rowCount,
-        rows: uploadedData?.rows
-      }));
+      // Merge mapping data into previewData instead of overwriting so we preserve assignment fields
+      try {
+        const previewRaw = sessionStorage.getItem('previewData');
+        const previewBase = previewRaw ? JSON.parse(previewRaw) : {};
+        const mergedPreview = {
+          ...previewBase,
+          projectName: uploadedData?.projectName,
+          fileName: uploadedData?.fileName,
+          sourceColumns: sourceColumns,
+          targetColumns: targetColumns,
+          rowCount: uploadedData?.rowCount,
+          rows: uploadedData?.rows,
+        };
+        sessionStorage.setItem('previewData', JSON.stringify(mergedPreview));
+      } catch (e) {
+        console.warn('previewData merge failed', e);
+        // fallback to writing minimal preview data
+        sessionStorage.setItem('previewData', JSON.stringify({
+          projectName: uploadedData?.projectName,
+          fileName: uploadedData?.fileName,
+          sourceColumns: sourceColumns,
+          targetColumns: targetColumns,
+          rowCount: uploadedData?.rowCount,
+          rows: uploadedData?.rows
+        }));
+      }
     }}
   >
     Preview Data
@@ -566,3 +662,4 @@ export default function Mapping() {
     </div>
   );
 }
+
