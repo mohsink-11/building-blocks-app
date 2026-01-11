@@ -72,12 +72,10 @@ serve(async (req: Request) => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } =
-      await supabase.auth.getClaims(token);
+    const { data: userData, error: userError } = await supabase.auth.getUser();
 
-    if (claimsError || !claimsData?.claims) {
-      console.log("[ai-suggest] Auth error:", claimsError);
+    if (userError || !userData?.user) {
+      console.log("[ai-suggest] Auth error:", userError);
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: {
@@ -87,7 +85,7 @@ serve(async (req: Request) => {
       });
     }
 
-    const userId = claimsData.claims.sub;
+    const userId = userData.user.id;
     console.log("[ai-suggest] Authenticated user:", userId);
 
     const body = await req.json().catch(() => ({}));

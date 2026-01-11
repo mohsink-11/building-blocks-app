@@ -74,8 +74,8 @@ export async function getBatchJob(id: string) {
   return { data, error };
 }
 
-export async function updateProject(id: string, data: Partial<ProjectInsert>) {
-  const { data: res, error } = await sb.from('projects').update([{ ...data }]).eq('id', id).select('*').single();
+export async function updateProject(id: string, data: Partial<ProjectInsert> & { stats?: Record<string, unknown> }) {
+  const { data: res, error } = await sb.from('projects').update({ ...data }).eq('id', id).select('*').single();
   return { data: res, error };
 }
 

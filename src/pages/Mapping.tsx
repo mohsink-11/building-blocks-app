@@ -176,8 +176,8 @@ export default function Mapping() {
   useEffect(() => {
     async function loadMapping() {
       setMappingError(null);
-      // If projectId is present, fetch mapping from DB
-      if (projectId) {
+      // If projectId is present and NOT "new", fetch mapping from DB
+      if (projectId && projectId !== 'new') {
         const { data, error } = await getProjectDetail(projectId);
         if (error || !data) {
           setMappingError(
@@ -192,8 +192,22 @@ export default function Mapping() {
           setMappingLoaded(false);
           return;
         }
-        setSourceColumns(data.settings.mapping.sourceColumns || fallbackSourceColumns);
-        setTargetColumns(data.settings.mapping.targetColumns || initialTargetColumns);
+        // Ensure sourceColumns have proper structure
+        const loadedSourceCols = (data.settings.mapping.sourceColumns || []).map((c: any, idx: number) => ({
+          id: c.id ?? `s${idx + 1}`,
+          name: c.name ?? `Column ${idx + 1}`,
+          type: c.type ?? 'string',
+          sampleValues: c.sampleValues || []
+        }));
+        // Ensure targetColumns have proper structure with mappedColumns as arrays
+        const loadedTargetCols = (data.settings.mapping.targetColumns || []).map((t: any, idx: number) => ({
+          id: t.id ?? `t${idx + 1}`,
+          name: t.name ?? `Column ${idx + 1}`,
+          mappedColumns: Array.isArray(t.mappedColumns) ? t.mappedColumns : [],
+          delimiter: t.delimiter ?? ''
+        }));
+        setSourceColumns(loadedSourceCols.length > 0 ? loadedSourceCols : fallbackSourceColumns);
+        setTargetColumns(loadedTargetCols.length > 0 ? loadedTargetCols : initialTargetColumns);
         setSuggestions([]); // Optionally, load suggestions from DB if you store them
         setMappingLoaded(true);
         return;
@@ -217,12 +231,25 @@ export default function Mapping() {
       const getInitialTargetColumns = (): TargetColumn[] => {
         try {
           if (location.state && (location.state as any).targetColumns) {
-            return (location.state as any).targetColumns as TargetColumn[];
+            const tCols = (location.state as any).targetColumns as TargetColumn[];
+            return tCols.map((t, idx) => ({
+              id: t.id ?? `t${idx + 1}`,
+              name: t.name ?? `Column ${idx + 1}`,
+              mappedColumns: Array.isArray(t.mappedColumns) ? t.mappedColumns : [],
+              delimiter: t.delimiter ?? ''
+            }));
           }
           const stored = sessionStorage.getItem('mappingData');
           if (stored) {
             const parsed = JSON.parse(stored);
-            if (parsed?.targetColumns) return parsed.targetColumns as TargetColumn[];
+            if (parsed?.targetColumns) {
+              return (parsed.targetColumns as TargetColumn[]).map((t, idx) => ({
+                id: t.id ?? `t${idx + 1}`,
+                name: t.name ?? `Column ${idx + 1}`,
+                mappedColumns: Array.isArray(t.mappedColumns) ? t.mappedColumns : [],
+                delimiter: t.delimiter ?? ''
+              }));
+            }
           }
         } catch (err) {}
         return initialTargetColumns;
