@@ -20,6 +20,7 @@ import Help from "./pages/Help";
 import NotFound from "./pages/NotFound";
 import AppLayout from "./components/layout/AppLayout";
 import Confirm from "./pages/Confirm";
+import { ProtectedRoute } from "./components/ProtectedRoute";
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -35,8 +36,8 @@ const App = () => (
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/auth/confirm" element={<Confirm />} />
-          {/* App routes with layout */}
-          <Route element={<AppLayout />}>
+          {/* App routes with layout - Protected */}
+          <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/upload" element={<Upload />} />
             <Route path="/projects" element={<Projects />} />
