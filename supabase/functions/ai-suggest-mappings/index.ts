@@ -3,6 +3,7 @@
 // Returns mapping suggestions using OpenAI
 
 import { serve } from "https://deno.land/std/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 declare const Deno: {
   env: {
@@ -38,6 +39,57 @@ serve(async (req: Request) => {
       });
     }
 
+    // ✅ Authentication check
+    const authHeader = req.headers.get("authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+      });
+    }
+
+    // Verify JWT using Supabase client
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return new Response(
+        JSON.stringify({ error: "Supabase not configured" }),
+        {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } =
+      await supabase.auth.getClaims(token);
+
+    if (claimsError || !claimsData?.claims) {
+      console.log("[ai-suggest] Auth error:", claimsError);
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+      });
+    }
+
+    const userId = claimsData.claims.sub;
+    console.log("[ai-suggest] Authenticated user:", userId);
+
     const body = await req.json().catch(() => ({}));
 
     console.log(
@@ -48,6 +100,7 @@ serve(async (req: Request) => {
     const columns: string[] = body.columns ?? [];
     const project = body.project ?? {};
 
+    // ✅ Input validation
     if (!Array.isArray(columns) || columns.length === 0) {
       return new Response(JSON.stringify({ error: "columns required" }), {
         status: 400,
@@ -56,6 +109,36 @@ serve(async (req: Request) => {
           "Content-Type": "application/json",
         },
       });
+    }
+
+    // Limit number of columns to prevent abuse
+    if (columns.length > 100) {
+      return new Response(
+        JSON.stringify({ error: "Too many columns (max 100)" }),
+        {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+    }
+
+    // Validate each column
+    for (const col of columns) {
+      if (typeof col !== "string" || col.length > 200) {
+        return new Response(
+          JSON.stringify({ error: "Invalid column format" }),
+          {
+            status: 400,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+      }
     }
 
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
@@ -110,17 +193,14 @@ Return ONLY valid JSON in this format:
       max_tokens: 600,
     };
 
-    const aiRes = await fetch(
-      "https://api.openai.com/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify(openAiPayload),
-      }
-    );
+    const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify(openAiPayload),
+    });
 
     if (!aiRes.ok) {
       const details = await aiRes.text();
@@ -138,9 +218,7 @@ Return ONLY valid JSON in this format:
     }
 
     const aiData = await aiRes.json();
-    const text =
-      aiData?.choices?.[0]?.message?.content ??
-      "";
+    const text = aiData?.choices?.[0]?.message?.content ?? "";
 
     let suggestions = [];
 

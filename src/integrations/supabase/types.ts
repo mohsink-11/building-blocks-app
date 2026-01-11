@@ -122,6 +122,105 @@ export type Database = {
         }
         Relationships: []
       }
+      project_activity: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          project_id: string | null
+          type: string
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          project_id?: string | null
+          type: string
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          project_id?: string | null
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_activity_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_exports: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+          project_id: string | null
+          size: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+          project_id?: string | null
+          size?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+          project_id?: string | null
+          size?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_exports_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_files: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+          processed_at: string | null
+          project_id: string | null
+          rows: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+          processed_at?: string | null
+          project_id?: string | null
+          rows?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+          processed_at?: string | null
+          project_id?: string | null
+          rows?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_files_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
           created_at: string | null
@@ -130,6 +229,7 @@ export type Database = {
           name: string
           owner: string | null
           settings: Json | null
+          stats: Json | null
           status: string | null
           updated_at: string | null
         }
@@ -140,6 +240,7 @@ export type Database = {
           name: string
           owner?: string | null
           settings?: Json | null
+          stats?: Json | null
           status?: string | null
           updated_at?: string | null
         }
@@ -150,6 +251,7 @@ export type Database = {
           name?: string
           owner?: string | null
           settings?: Json | null
+          stats?: Json | null
           status?: string | null
           updated_at?: string | null
         }
